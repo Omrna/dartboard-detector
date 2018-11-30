@@ -8,6 +8,9 @@
 
 using namespace cv;
 
+std::vector<double> rhoValues;
+std::vector<double> thetaValues;
+
 void convolutionDX(
 	Mat &input,
 	int size,
@@ -37,7 +40,7 @@ void getThresholdedMag(
 	Mat &output
 );
 
-void hough(
+void getHoughSpace(
 	Mat &thresholdedMag,
 	Mat &gradientDirection,
 	int threshold,
@@ -46,10 +49,17 @@ void hough(
 	Mat &output
 );
 
+void drawFoundLines(
+	Mat &image,
+	int width,
+	int height
+);
+
+
 int main() {
 
   Mat image;
-  image = imread( "line2.png", 1 );
+  image = imread( "dart.bmp", 1 );
 
   namedWindow( "Original Image", CV_WINDOW_AUTOSIZE );
   imshow( "Original Image", image );
@@ -73,6 +83,9 @@ int main() {
 
 	Mat houghSpace;
 
+	Mat foundLines = imread( "dart.bmp", 1 );
+
+
   convolutionDX(image, 3, dfdx);
   convolutionDY(image, 3, dfdy);
 
@@ -81,7 +94,9 @@ int main() {
 
 	getThresholdedMag(gradientMagnitude, thresholdedMag);
 
-	hough(thresholdedMag, gradientDirection, 30, image.cols, image.rows, houghSpace);
+	getHoughSpace(thresholdedMag, gradientDirection, 240, image.cols, image.rows, houghSpace);
+
+	drawFoundLines(foundLines, image.cols, image.rows);
 
   return 0;
 }
@@ -265,7 +280,8 @@ void getDirection(Mat &dfdx, Mat &dfdy,	Mat &output) {
       dyVal = dfdy.at<double>(y, x);
 
 			// Calculate direction
-      gradientVal = atan2(dyVal, dxVal);
+			if (dxVal != 0 && dyVal != 0) gradientVal = atan2(dyVal, dxVal);
+			else gradientVal = (double) atan(0);
 
 			output.at<double>(y, x) = gradientVal;
     }
@@ -300,7 +316,7 @@ void getThresholdedMag(Mat &input, Mat &output) {
   imwrite("thresholded.jpg", output);
 }
 
-void hough( Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width, int height, Mat &houghSpace) {
+void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width, int height, Mat &houghSpace) {
 	double maxDist = sqrt(pow(width, 2) + pow(height, 2)) / 2;
 
 	int centreX = width / 2;
@@ -312,12 +328,10 @@ void hough( Mat &thresholdedMag, Mat &gradientDirection, int threshold, int widt
 
 	houghSpace.create(180, round(maxDist), CV_64F);
 
-	//std::cout << houghSpace.size();
-
 	for (int y = 0; y < houghSpace.rows; y++) {
 		for (int x = 0; x < houghSpace.cols; x++) {
 			if (thresholdedMag.at<double>(y, x) == 255) {
-				for (int theta = 0; theta < 180; theta += 45) {
+				for (int theta = 0; theta < 180; theta += 10) {
 						radians = theta * (PI/ 180);
 
 						rho = ((x - centreX) * cos(radians)) + ((y - centreY) * sin(radians));
@@ -329,29 +343,53 @@ void hough( Mat &thresholdedMag, Mat &gradientDirection, int threshold, int widt
 		}
 	}
 
-	// Mat img;
-	// img.create(houghSpace.size(), CV_64F);
+	Mat img;
+	img.create(houghSpace.size(), CV_64F);
 
 	//normalize(houghSpace, img, 0, 255, NORM_MINMAX);
 
-	// for (int y = 0; y < houghSpace.rows; y++) {
-	// 	for (int x = 0; x < houghSpace.cols; x++) {
-	// 		// if (y == 400) {
-	// 		// 	std::cout << x << " ";
-	// 		// }
-	//
-	// 		double val = 0.0;
-  //     val = houghSpace.at<double>(y, x);
-	//
-	// 		if (val > 254.9){
-	// 			houghSpace.at<double>(y, x) = 255;
-	// 			std::cout<< y << " + " << x << "\n";
-	// 		}
-	//
-  //     else houghSpace.at<double>(y, x) = 0.0;
-	// 	}
-	// }
+	for (int y = 0; y < img.rows; y++) {
+		for (int x = 0; x < img.cols; x++) {
+			// if (y == 400) {
+			// 	std::cout << x << " ";
+			// }
 
-	imwrite("houghSpace.jpg", houghSpace);
+			double val = 0.0;
+      val = houghSpace.at<double>(y, x);
 
+			if (val > 240){
+				rhoValues.push_back(x);
+				thetaValues.push_back(y);
+				img.at<double>(y, x) = 255;
+				// std::cout<< y << " + " << x << "\n";
+			}
+
+      else img.at<double>(y, x) = 0.0;
+		}
+	}
+
+	imwrite("houghSpace.jpg", img);
+
+}
+
+void drawFoundLines( Mat &image, int width, int height ){
+	int centreX = width / 2;
+	int centreY = height /2;
+
+	for (int i = 0; i < rhoValues.size(); i++) {
+		Point point1, point2;
+
+		double a = cos(thetaValues[i]);
+		double b = sin(thetaValues[i]);
+		double x0 = a*rhoValues[i] + centreX, y0 = b*rhoValues[i] + centreY;
+
+		point1.x = cvRound(x0 + 1000*(-b));
+		point1.y = cvRound(y0 + 1000*(a));
+		point2.x = cvRound(x0 - 1000*(-b));
+		point2.y = cvRound(y0 - 1000*(a));
+
+		line(image, point1, point2,  Scalar( 255, 0, 0 ), 2);
+	}
+
+	imwrite("foundLines.jpg", image);
 }
