@@ -136,6 +136,7 @@ void convolutionDX(Mat &input, int size, Mat &output) {
 	// Gaussian blur before finding derivation
 	GaussianBlur(paddedInput, paddedInput, Size(3,3), 0, 0, BORDER_DEFAULT);
 
+
   // Time to do convolution
   for (int i = 0; i < input.rows; i++) {
      for (int j = 0; j < input.cols; j++) {
@@ -205,6 +206,7 @@ void convolutionDY(Mat &input, int size, Mat &output) {
 
 	// Gaussian blur before finding derivation
 	GaussianBlur(paddedInput, paddedInput, Size(3,3), 0, 0, BORDER_DEFAULT);
+
 
   // Time to do convolution
   for (int i = 0; i < input.rows; i++) {
@@ -328,15 +330,17 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 
 	houghSpace.create(180, round(maxDist), CV_64F);
 
-	for (int y = 0; y < houghSpace.rows; y++) {
-		for (int x = 0; x < houghSpace.cols; x++) {
-			if (thresholdedMag.at<double>(y, x) == 255) {
-				for (int theta = 0; theta < 180; theta += 10) {
+	for (int y = 0; y < thresholdedMag.rows; y++) {
+		for (int x = 0; x < thresholdedMag.cols; x++) {
+			if (thresholdedMag.at<double>(y, x) > 240) {
+				//double directionVal = gradientDirection.at<double>(y, x)
+				for (int theta = 0; theta < 180; theta += 45) {
 						radians = theta * (PI/ 180);
 
 						rho = ((x - centreX) * cos(radians)) + ((y - centreY) * sin(radians));
+						// rho = (x * cos(radians)) - centreX + (y * sin(radians)) - centreY;
 
-						houghSpace.at<double>(round(rho + maxDist), theta)++;
+						houghSpace.at<double>( theta, round(rho + maxDist) )++;
 						// std::cout << round(rho + maxDist) << " and " << theta << "\n";
 				}
 			}
@@ -348,11 +352,9 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 
 	//normalize(houghSpace, img, 0, 255, NORM_MINMAX);
 
+	// Thresholding Hough space
 	for (int y = 0; y < img.rows; y++) {
 		for (int x = 0; x < img.cols; x++) {
-			// if (y == 400) {
-			// 	std::cout << x << " ";
-			// }
 
 			double val = 0.0;
       val = houghSpace.at<double>(y, x);
@@ -381,7 +383,8 @@ void drawFoundLines( Mat &image, int width, int height ){
 
 		double a = cos(thetaValues[i]);
 		double b = sin(thetaValues[i]);
-		double x0 = a*rhoValues[i] + centreX, y0 = b*rhoValues[i] + centreY;
+		double x0 = a*rhoValues[i] + centreX;
+		double y0 = b*rhoValues[i] + centreY;
 
 		point1.x = cvRound(x0 + 1000*(-b));
 		point1.y = cvRound(y0 + 1000*(a));
