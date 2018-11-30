@@ -2,42 +2,54 @@
 #include <opencv/cv.h>        //you may need to
 #include <opencv/highgui.h>   //adjust import locations
 #include <opencv/cxcore.h>    //depending on your machine setup
+#include <math.h>
+
+#define PI 3.14159265
 
 using namespace cv;
 
 void convolutionDX(
-	cv::Mat &input,
+	Mat &input,
 	int size,
-	cv::Mat &output
+	Mat &output
 );
 
 void convolutionDY(
-	cv::Mat &input,
+	Mat &input,
 	int size,
-	cv::Mat &output
+	Mat &output
 );
 
 void getMagnitude(
-  cv::Mat &dfdx,
-  cv::Mat &dfdy,
-	cv::Mat &output
+  Mat &dfdx,
+  Mat &dfdy,
+	Mat &output
 );
 
 void getDirection(
-  cv::Mat &dfdx,
-  cv::Mat &dfdy,
-	cv::Mat &output
+  Mat &dfdx,
+  Mat &dfdy,
+	Mat &output
 );
 
-void getThresholdedImg(
-	cv::Mat &input,
-	cv::Mat &output
+void getThresholdedMag(
+	Mat &input,
+	Mat &output
+);
+
+void hough(
+	Mat &thresholdedMag,
+	Mat &gradientDirection,
+	int threshold,
+	int width,
+	int height,
+	Mat &output
 );
 
 int main() {
 
   Mat image;
-  image = imread( "dart.bmp", 1 );
+  image = imread( "line2.png", 1 );
 
   namedWindow( "Original Image", CV_WINDOW_AUTOSIZE );
   imshow( "Original Image", image );
@@ -56,8 +68,10 @@ int main() {
   Mat gradientDirection;
 	gradientDirection.create(image.size(), CV_64F);
 
-	Mat thresholdedImg;
-	thresholdedImg.create(image.size(), CV_64F);
+	Mat thresholdedMag;
+	thresholdedMag.create(image.size(), CV_64F);
+
+	Mat houghSpace;
 
   convolutionDX(image, 3, dfdx);
   convolutionDY(image, 3, dfdy);
@@ -65,12 +79,14 @@ int main() {
 	getMagnitude(dfdx, dfdy, gradientMagnitude);
 	getDirection(dfdx, dfdy, gradientDirection);
 
-	getThresholdedImg(gradientMagnitude, thresholdedImg);
+	getThresholdedMag(gradientMagnitude, thresholdedMag);
+
+	hough(thresholdedMag, gradientDirection, 30, image.cols, image.rows, houghSpace);
 
   return 0;
 }
 
-void convolutionDX(cv::Mat &input, int size, cv::Mat &output) {
+void convolutionDX(Mat &input, int size, Mat &output) {
 
   // Create convolution kernel
   cv :: Mat kernel(size, size, CV_64F);
@@ -95,13 +111,15 @@ void convolutionDX(cv::Mat &input, int size, cv::Mat &output) {
     }
   }
 
-
-
   // Create padded version of input
-  cv::Mat paddedInput;
-	cv::copyMakeBorder( input, paddedInput,
+  Mat paddedInput;
+	copyMakeBorder( input, paddedInput,
 		kernelRadiusX, kernelRadiusX, kernelRadiusY, kernelRadiusY,
-		cv::BORDER_REPLICATE );
+		BORDER_REPLICATE );
+
+
+	// Gaussian blur before finding derivation
+	GaussianBlur(paddedInput, paddedInput, Size(3,3), 0, 0, BORDER_DEFAULT);
 
   // Time to do convolution
   for (int i = 0; i < input.rows; i++) {
@@ -133,13 +151,13 @@ void convolutionDX(cv::Mat &input, int size, cv::Mat &output) {
 	Mat img;
 	img.create(input.size(), CV_64F);
 	// Normalise to avoid out of range and negative values
-	cv::normalize(output, img, 0, 255, cv::NORM_MINMAX);
+	normalize(output, img, 0, 255, NORM_MINMAX);
 
   //Save thresholded image
   imwrite("dfdx.jpg", img);
 }
 
-void convolutionDY(cv::Mat &input, int size, cv::Mat &output) {
+void convolutionDY(Mat &input, int size, Mat &output) {
 
   // Create convolution kernel
   cv :: Mat kernel(size, size, CV_64F);
@@ -165,10 +183,13 @@ void convolutionDY(cv::Mat &input, int size, cv::Mat &output) {
   }
 
   // Create padded version of input
-  cv::Mat paddedInput;
-	cv::copyMakeBorder( input, paddedInput,
+  Mat paddedInput;
+	copyMakeBorder( input, paddedInput,
 		kernelRadiusX, kernelRadiusX, kernelRadiusY, kernelRadiusY,
-		cv::BORDER_REPLICATE );
+		BORDER_REPLICATE );
+
+	// Gaussian blur before finding derivation
+	GaussianBlur(paddedInput, paddedInput, Size(3,3), 0, 0, BORDER_DEFAULT);
 
   // Time to do convolution
   for (int i = 0; i < input.rows; i++) {
@@ -200,13 +221,13 @@ void convolutionDY(cv::Mat &input, int size, cv::Mat &output) {
 	Mat img;
 	img.create(input.size(), CV_64F);
 	// Normalise to avoid out of range and negative values
-	cv::normalize(output, img, 0, 255, cv::NORM_MINMAX);
+	normalize(output, img, 0, 255, NORM_MINMAX);
 
   //Save thresholded image
   imwrite("dfdy.jpg", img);
 }
 
-void getMagnitude(cv::Mat &dfdx, cv::Mat &dfdy,	cv::Mat &output) {
+void getMagnitude(Mat &dfdx, Mat &dfdy,	Mat &output) {
   for (int y = 0; y < output.rows; y++) {
     for (int x = 0; x < output.cols; x++) {
 
@@ -227,12 +248,12 @@ void getMagnitude(cv::Mat &dfdx, cv::Mat &dfdy,	cv::Mat &output) {
 	Mat img;
 	img.create(dfdx.size(), CV_64F);
 
-	cv::normalize(output, img, 0, 255, cv::NORM_MINMAX);
+	normalize(output, img, 0, 255, NORM_MINMAX);
 
   imwrite("magnitude.jpg", img);
 }
 
-void getDirection(cv::Mat &dfdx, cv::Mat &dfdy,	cv::Mat &output) {
+void getDirection(Mat &dfdx, Mat &dfdy,	Mat &output) {
 	for (int y = 0; y < output.rows; y++) {
     for (int x = 0; x < output.cols; x++) {
 
@@ -253,16 +274,16 @@ void getDirection(cv::Mat &dfdx, cv::Mat &dfdy,	cv::Mat &output) {
 	Mat img;
 	img.create(dfdx.size(), CV_64F);
 
-	cv::normalize(output, img, 0, 255, cv::NORM_MINMAX);
+	normalize(output, img, 0, 255, NORM_MINMAX);
 
 	imwrite("direction.jpg", img);
 }
 
-void getThresholdedImg(cv::Mat &input, cv::Mat &output) {
+void getThresholdedMag(Mat &input, Mat &output) {
 	Mat img;
 	img.create(input.size(), CV_64F);
 
-	cv::normalize(input, img, 0, 255, cv::NORM_MINMAX);
+	normalize(input, img, 0, 255, NORM_MINMAX);
 
 	for (int y = 0; y < input.rows; y++) {
     for (int x = 0; x < input.cols; x++) {
@@ -271,10 +292,66 @@ void getThresholdedImg(cv::Mat &input, cv::Mat &output) {
       val = img.at<double>(y, x);
 
 
-      if (val > 80) output.at<double>(y, x) = 255.0;
+      if (val > 100) output.at<double>(y, x) = 255.0;
       else output.at<double>(y, x) = 0.0;
     }
   }
 
   imwrite("thresholded.jpg", output);
+}
+
+void hough( Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width, int height, Mat &houghSpace) {
+	double maxDist = sqrt(pow(width, 2) + pow(height, 2)) / 2;
+
+	int centreX = width / 2;
+	int centreY = height /2;
+	int theta = 0;
+	int angle = 45;
+	double rho = 0.0;
+	double radians = 0.0;
+
+	houghSpace.create(180, round(maxDist), CV_64F);
+
+	//std::cout << houghSpace.size();
+
+	for (int y = 0; y < houghSpace.rows; y++) {
+		for (int x = 0; x < houghSpace.cols; x++) {
+			if (thresholdedMag.at<double>(y, x) == 255) {
+				for (int theta = 0; theta < 180; theta += 45) {
+						radians = theta * (PI/ 180);
+
+						rho = ((x - centreX) * cos(radians)) + ((y - centreY) * sin(radians));
+
+						houghSpace.at<double>(round(rho + maxDist), theta)++;
+						// std::cout << round(rho + maxDist) << " and " << theta << "\n";
+				}
+			}
+		}
+	}
+
+	// Mat img;
+	// img.create(houghSpace.size(), CV_64F);
+
+	//normalize(houghSpace, img, 0, 255, NORM_MINMAX);
+
+	// for (int y = 0; y < houghSpace.rows; y++) {
+	// 	for (int x = 0; x < houghSpace.cols; x++) {
+	// 		// if (y == 400) {
+	// 		// 	std::cout << x << " ";
+	// 		// }
+	//
+	// 		double val = 0.0;
+  //     val = houghSpace.at<double>(y, x);
+	//
+	// 		if (val > 254.9){
+	// 			houghSpace.at<double>(y, x) = 255;
+	// 			std::cout<< y << " + " << x << "\n";
+	// 		}
+	//
+  //     else houghSpace.at<double>(y, x) = 0.0;
+	// 	}
+	// }
+
+	imwrite("houghSpace.jpg", houghSpace);
+
 }
