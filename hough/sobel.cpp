@@ -59,7 +59,7 @@ void drawFoundLines(
 int main() {
 
   Mat image;
-  image = imread( "dart.bmp", 1 );
+  image = imread( "dart2.jpg", 1 );
 
   namedWindow( "Original Image", CV_WINDOW_AUTOSIZE );
   imshow( "Original Image", image );
@@ -83,9 +83,9 @@ int main() {
 
 	Mat houghSpace;
 
-	Mat foundLines = imread( "dart.bmp", 1 );
+	Mat foundLines = imread( "dart2.jpg", 1 );
 
-
+	// Make one convolution function
   convolutionDX(image, 3, dfdx);
   convolutionDY(image, 3, dfdy);
 
@@ -319,12 +319,14 @@ void getThresholdedMag(Mat &input, Mat &output) {
 }
 
 void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width, int height, Mat &houghSpace) {
-	double maxDist = sqrt(pow(width, 2) + pow(height, 2)) / 2;
+	//double maxDist = sqrt(pow(width, 2) + pow(height, 2)) / 2;
 
-	int centreX = width / 2;
-	int centreY = height /2;
+
 	double rho = 0.0;
 	double radians = 0.0;
+	double directionTheta = 0.0;
+	double directionVal = 0.0;
+	int angleRange = 20;
 
 	// houghSpace.create(round(maxDist), 180, CV_64F);
 
@@ -333,8 +335,15 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 	for (int y = 0; y < thresholdedMag.rows; y++) {
 		for (int x = 0; x < thresholdedMag.cols; x++) {
 			if (thresholdedMag.at<double>(y, x) > 250) {
-				//double directionVal = gradientDirection.at<double>(y, x)
-				for (int theta = 0; theta < 360; theta += 1) {
+
+				directionVal = gradientDirection.at<double>(y, x);
+				if (directionVal > 0) directionTheta = (directionVal * (180/PI)) + 180;
+				else directionTheta = 360 + (directionVal * (180/PI));
+
+				directionTheta = round(directionTheta);
+
+				for (int theta = directionTheta - angleRange; theta < directionTheta + angleRange; theta += 1) {
+				// for (int theta = 0; theta < 360; theta++){
 					radians = theta * (PI/ 180);
 
 					rho = (x * cos(radians)) + (y * sin(radians)) + width + height;
@@ -347,10 +356,15 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 
 	imwrite("unThresholdedHoughSpace.jpg", houghSpace);
 
-	Mat img;
-	img.create(houghSpace.size(), CV_64F);
+	// Mat img;
+	// img.create(houghSpace.size(), CV_64F);
 
 	//normalize(houghSpace, img, 0, 255, NORM_MINMAX);
+	double min, max;
+	cv::minMaxLoc(houghSpace, &min, &max);
+	double houghSpaceThreshold = min + ((max - min)/2);
+
+	//std::cout << max << " and " << min << '\n';
 
 	// Thresholding Hough space
 	for (int y = 0; y < houghSpace.rows; y++) {
@@ -359,7 +373,7 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 			double val = 0.0;
       val = houghSpace.at<double>(y, x);
 
-			if (val > 254){
+			if (val > houghSpaceThreshold){
 				rhoValues.push_back(y);
 				thetaValues.push_back(x);
 				houghSpace.at<double>(y, x) = 255;
@@ -385,7 +399,7 @@ void drawFoundLines( Mat &image, int width, int height ){
 
 		double radians = theta * (PI/ 180);
 
-		std::cout << rho << "and" << radians << '\n';
+		//std::cout << rho << "and" << radians << '\n';
 
 		double a = cos(radians);
 		double b = sin(radians);
