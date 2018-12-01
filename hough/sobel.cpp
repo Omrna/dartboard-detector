@@ -323,29 +323,29 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 
 	int centreX = width / 2;
 	int centreY = height /2;
-	int theta = 0;
-	int angle = 45;
 	double rho = 0.0;
 	double radians = 0.0;
 
-	houghSpace.create(180, round(maxDist), CV_64F);
+	// houghSpace.create(round(maxDist), 180, CV_64F);
+
+	houghSpace.create(2*(width + height), 360, CV_64F);
 
 	for (int y = 0; y < thresholdedMag.rows; y++) {
 		for (int x = 0; x < thresholdedMag.cols; x++) {
-			if (thresholdedMag.at<double>(y, x) > 240) {
+			if (thresholdedMag.at<double>(y, x) > 250) {
 				//double directionVal = gradientDirection.at<double>(y, x)
-				for (int theta = 0; theta < 180; theta += 45) {
-						radians = theta * (PI/ 180);
+				for (int theta = 0; theta < 360; theta += 1) {
+					radians = theta * (PI/ 180);
 
-						rho = ((x - centreX) * cos(radians)) + ((y - centreY) * sin(radians));
-						// rho = (x * cos(radians)) - centreX + (y * sin(radians)) - centreY;
+					rho = (x * cos(radians)) + (y * sin(radians)) + width + height;
 
-						houghSpace.at<double>( theta, round(rho + maxDist) )++;
-						// std::cout << round(rho + maxDist) << " and " << theta << "\n";
+					houghSpace.at<double>( rho , theta )++;
 				}
 			}
 		}
 	}
+
+	imwrite("unThresholdedHoughSpace.jpg", houghSpace);
 
 	Mat img;
 	img.create(houghSpace.size(), CV_64F);
@@ -353,25 +353,24 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 	//normalize(houghSpace, img, 0, 255, NORM_MINMAX);
 
 	// Thresholding Hough space
-	for (int y = 0; y < img.rows; y++) {
-		for (int x = 0; x < img.cols; x++) {
+	for (int y = 0; y < houghSpace.rows; y++) {
+		for (int x = 0; x < houghSpace.cols; x++) {
 
 			double val = 0.0;
       val = houghSpace.at<double>(y, x);
 
-			if (val > 240){
-				rhoValues.push_back(x);
-				thetaValues.push_back(y);
-				img.at<double>(y, x) = 255;
-				// std::cout<< y << " + " << x << "\n";
+			if (val > 254){
+				rhoValues.push_back(y);
+				thetaValues.push_back(x);
+				houghSpace.at<double>(y, x) = 255;
+				// std::cout<< rhoValues.size() << " + " << thetaValues.size() << "\n";
 			}
 
-      else img.at<double>(y, x) = 0.0;
+      else houghSpace.at<double>(y, x) = 0.0;
 		}
 	}
 
-	imwrite("houghSpace.jpg", img);
-
+	imwrite("houghSpace.jpg", houghSpace);
 }
 
 void drawFoundLines( Mat &image, int width, int height ){
@@ -379,19 +378,26 @@ void drawFoundLines( Mat &image, int width, int height ){
 	int centreY = height /2;
 
 	for (int i = 0; i < rhoValues.size(); i++) {
-		Point point1, point2;
 
-		double a = cos(thetaValues[i]);
-		double b = sin(thetaValues[i]);
-		double x0 = a*rhoValues[i] + centreX;
-		double y0 = b*rhoValues[i] + centreY;
+		Point point1, point2;
+		double theta = thetaValues[i];
+		double rho = rhoValues[i];
+
+		double radians = theta * (PI/ 180);
+
+		std::cout << rho << "and" << radians << '\n';
+
+		double a = cos(radians);
+		double b = sin(radians);
+		double x0 = a * (rho - width - height);
+		double y0 = b * (rho - width - height);
 
 		point1.x = cvRound(x0 + 1000*(-b));
 		point1.y = cvRound(y0 + 1000*(a));
 		point2.x = cvRound(x0 - 1000*(-b));
 		point2.y = cvRound(y0 - 1000*(a));
 
-		line(image, point1, point2,  Scalar( 255, 0, 0 ), 2);
+		line(image, point1, point2,  Scalar( 0, 255, 0 ), 2);
 	}
 
 	imwrite("foundLines.jpg", image);
