@@ -10,47 +10,18 @@ using namespace cv;
 
 std::vector<double> rhoValues;
 std::vector<double> thetaValues;
-string path = "output";
 
-void convolution(
-	Mat &input,
-	int size,
-	int direction,
-	Mat kernel,
-	Mat &output
-);
+void convolution(	Mat &input,	int size,	int direction,	Mat kernel,	Mat &output );
 
-void getMagnitude(
-  Mat &dfdx,
-  Mat &dfdy,
-	Mat &output
-);
+void getMagnitude( Mat &dfdx, Mat &dfdy, Mat &output );
 
-void getDirection(
-  Mat &dfdx,
-  Mat &dfdy,
-	Mat &output
-);
+void getDirection( Mat &dfdx, Mat &dfdy, Mat &output );
 
-void getThresholdedMag(
-	Mat &input,
-	Mat &output
-);
+void getThresholdedMag(	Mat &input,	Mat &output );
 
-void getHoughSpace(
-	Mat &thresholdedMag,
-	Mat &gradientDirection,
-	int threshold,
-	int width,
-	int height,
-	Mat &output
-);
+void getHoughSpace(	Mat &thresholdedMag,Mat &gradientDirection,	int threshold, int width,	int height,	Mat &output );
 
-void drawFoundLines(
-	Mat &image,
-	int width,
-	int height
-);
+void drawFoundLines( Mat &image, int width, int height );
 
 
 int main(int argc, const char** argv) {
