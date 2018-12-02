@@ -165,7 +165,7 @@ void getThresholdedMag(Mat &input, Mat &output) {
       val = img.at<double>(y, x);
 
 
-      if (val > 100) output.at<double>(y, x) = 255.0;
+      if (val > 200) output.at<double>(y, x) = 255.0;
       else output.at<double>(y, x) = 0.0;
     }
   }
@@ -181,7 +181,7 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 	double radians = 0.0;
 	double directionTheta = 0.0;
 	double directionVal = 0.0;
-	int angleRange = 20;
+	int angleRange = 5;
 
 	// houghSpace.create(round(maxDist), 180, CV_64F);
 
@@ -214,14 +214,13 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 
 	imwrite("output/unThresholdedHoughSpace.jpg", houghSpace);
 
+	normalize(houghSpace, houghSpace, 0, 255, NORM_MINMAX);
 
-
-	//normalize(houghSpace, img, 0, 255, NORM_MINMAX);
 	double min, max;
 	cv::minMaxLoc(houghSpace, &min, &max);
-	double houghSpaceThreshold = min + ((max - min)/2);
+	// double houghSpaceThreshold = min + ((max - min)/2);
 
-	//std::cout << max << " and " << min << '\n';
+	std::cout << max << " and " << min << '\n';
 
 	// Thresholding Hough space
 	for (int y = 0; y < houghSpace.rows; y++) {
@@ -230,7 +229,7 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 			double val = 0.0;
       val = houghSpace.at<double>(y, x);
 
-			if (val > houghSpaceThreshold){
+			if (val > 100){
 				rhoValues.push_back(y);
 				thetaValues.push_back(x);
 				houghSpace.at<double>(y, x) = 255;
