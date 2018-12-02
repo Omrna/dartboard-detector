@@ -12,15 +12,11 @@ std::vector<double> rhoValues;
 std::vector<double> thetaValues;
 string path = "output";
 
-void convolutionDX(
+void convolution(
 	Mat &input,
 	int size,
-	Mat &output
-);
-
-void convolutionDY(
-	Mat &input,
-	int size,
+	int direction,
+	Mat kernel,
 	Mat &output
 );
 
@@ -75,6 +71,14 @@ int main(int argc, const char** argv) {
   Mat dfdy;
   dfdy.create(image.size(), CV_64F);
 
+	Mat dxKernel = (Mat_<double>(3,3) << -1, 0, 1,
+																			 -2, 0, 2,
+																			 -1, 0, 1);
+
+  Mat dyKernel = (Mat_<double>(3,3) << -1,-2,-1,
+																		    0, 0, 0,
+																		    1, 2, 1);
+
   Mat gradientMagnitude;
   gradientMagnitude.create(image.size(), CV_64F);
 
@@ -88,9 +92,8 @@ int main(int argc, const char** argv) {
 
 	Mat foundLines = imread( imgName, 1 );
 
-	// Make one convolution function
-  convolutionDX(image, 3, dfdx);
-  convolutionDY(image, 3, dfdy);
+  convolution(image, 3, 0, dxKernel, dfdx);
+  convolution(image, 3, 1, dyKernel, dfdy);
 
 	getMagnitude(dfdx, dfdy, gradientMagnitude);
 	getDirection(dfdx, dfdy, gradientDirection);
@@ -104,30 +107,10 @@ int main(int argc, const char** argv) {
   return 0;
 }
 
-void convolutionDX(Mat &input, int size, Mat &output) {
-
-  // Create convolution kernel
-  cv :: Mat kernel(size, size, CV_64F);
+void convolution(Mat &input, int size, int direction, Mat kernel, Mat &output) {
 
   int kernelRadiusX = ( kernel.size[0] - 1 ) / 2;
 	int kernelRadiusY = ( kernel.size[1] - 1 ) / 2;
-
-  // Set kernel values
-	for( int m = -kernelRadiusX; m <= kernelRadiusX; m++ ) {
-	  for( int n = -kernelRadiusY; n <= kernelRadiusY; n++ ) {
-      if ((n + kernelRadiusY) == 0) {
-        kernel.at<double>(m + kernelRadiusX, n + kernelRadiusY) = (double)-1 / (size * size);
-      }
-      else if ((n + kernelRadiusY) == 1) {
-        kernel.at<double>(m + kernelRadiusX, n + kernelRadiusY) = 0;
-      }
-      else {
-        kernel.at<double>(m + kernelRadiusX, n + kernelRadiusY) = (double)1 / (size * size);
-      }
-			kernel.at<double>(1, 0) = (double)-2 / (size * size);
-			kernel.at<double>(1, 2) = (double) 2 / (size * size);
-    }
-  }
 
   // Create padded version of input
   Mat paddedInput;
@@ -173,78 +156,8 @@ void convolutionDX(Mat &input, int size, Mat &output) {
 	normalize(output, img, 0, 255, NORM_MINMAX);
 
   //Save thresholded image
-  imwrite("output/dfdx.jpg", img);
-}
-
-void convolutionDY(Mat &input, int size, Mat &output) {
-
-  // Create convolution kernel
-  cv :: Mat kernel(size, size, CV_64F);
-
-  int kernelRadiusX = ( kernel.size[0] - 1 ) / 2;
-	int kernelRadiusY = ( kernel.size[1] - 1 ) / 2;
-
-  // Set kernel values
-	for( int m = -kernelRadiusX; m <= kernelRadiusX; m++ ) {
-	  for( int n = -kernelRadiusY; n <= kernelRadiusY; n++ ) {
-      if ((m + kernelRadiusX) == 0) {
-        kernel.at<double>(m + kernelRadiusX, n + kernelRadiusY) = (double)-1 / (size * size);
-      }
-      else if ((m + kernelRadiusX) == 1) {
-        kernel.at<double>(m + kernelRadiusX, n + kernelRadiusY) = 0;
-      }
-      else {
-        kernel.at<double>(m + kernelRadiusX, n + kernelRadiusY) = (double)1 / (size * size);
-      }
-			kernel.at<double>(0, 1) = (double)-2 / (size * size);
-			kernel.at<double>(2, 1) = (double) 2 / (size * size);
-    }
-  }
-
-  // Create padded version of input
-  Mat paddedInput;
-	copyMakeBorder( input, paddedInput,
-		kernelRadiusX, kernelRadiusX, kernelRadiusY, kernelRadiusY,
-		BORDER_REPLICATE );
-
-	// Gaussian blur before finding derivation
-	GaussianBlur(paddedInput, paddedInput, Size(3,3), 0, 0, BORDER_DEFAULT);
-
-
-  // Time to do convolution
-  for (int i = 0; i < input.rows; i++) {
-     for (int j = 0; j < input.cols; j++) {
-
-       double sum = 0.0;
-
-       for(int m = -kernelRadiusX; m <= kernelRadiusX; m++) {
-         for(int n = -kernelRadiusY; n <= kernelRadiusY; n++) {
-
-           // find the correct indices we are using
- 					int imagex = i + m + kernelRadiusX;
- 					int imagey = j + n + kernelRadiusY;
- 					int kernelx = m + kernelRadiusX;
- 					int kernely = n + kernelRadiusY;
-
- 					// get the values from the padded image and the kernel
- 					int imageval = (int) paddedInput.at<uchar>( imagex, imagey );
- 					double kernalval = kernel.at<double>( kernelx, kernely );
-
- 					// do the multiplication
- 					sum += imageval * kernalval;
-         }
-       }
-       output.at<double>(i, j) = sum;
-    }
-  }
-
-	Mat img;
-	img.create(input.size(), CV_64F);
-	// Normalise to avoid out of range and negative values
-	normalize(output, img, 0, 255, NORM_MINMAX);
-
-  //Save thresholded image
-  imwrite("output/dfdy.jpg", img);
+	if (direction == 0) imwrite("output/dfdx.jpg", img);
+	else imwrite("output/dfdy.jpg", img);
 }
 
 void getMagnitude(Mat &dfdx, Mat &dfdy,	Mat &output) {
