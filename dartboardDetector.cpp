@@ -26,6 +26,7 @@ using namespace cv;
 void detectVJ( Mat frame );
 void displayVJ( Mat frame );
 float F1Test( int facesDetected, const char* imgName, Mat frame );
+void removeOverlaps();
 
 void convolution(	Mat &input,	int size,	int direction,	Mat kernel,	Mat &output );
 void getMagnitude( Mat &dfdx, Mat &dfdy, Mat &output );
@@ -230,7 +231,7 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 			double val = 0.0;
       val = houghSpace.at<double>(y, x);
 
-			if (val > 100){
+			if (val > 150){
 				rhoValues.push_back(y);
 				thetaValues.push_back(x);
 				houghSpace.at<double>(y, x) = 255;
@@ -252,7 +253,6 @@ void drawFoundLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<do
   int cropWidth = croppedImg.cols;
   int cropHeight = croppedImg.rows;
 
-  std::cout << rectangle.y << '\n';
   Mat image = frame;
 
 	for (int i = 0; i < rhoValues.size(); i++) {
@@ -281,27 +281,18 @@ void drawFoundLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<do
   		point2.x = cvRound(x0 - cropWidth*(-b));
   		point2.y = cvRound(y0 - cropHeight*(a));
     }
-    // Else use x,y space
     else {
-      if (cvRound(rectangle.y + c) < rectangle.y) {
-        // When x = rectangle.x and y = rectangle.y + height
-        point1.x = cvRound(rectangle.x);
-        point1.y = cvRound(rectangle.y) + cvRound(c);
-        // When x = end of image
-        point2.x = cvRound(rectangle.x + rectangle.width);
-        point2.y = cvRound(rectangle.y) + cvRound(c - (rectangle.width * m));
-      }
-      else {
-        point1.x = cvRound(rectangle.x) + cvRound(c/m);
-        point1.y = cvRound(rectangle.y);
-        // When x = end of image
-        point2.x = cvRound(rectangle.x + rectangle.width);
-        point2.y = cvRound(rectangle.y) + cvRound(c - (rectangle.width * m));
-      }
-
+      // When x = rectangle.x and y = rectangle.y + height
+      point1.x = cvRound(rectangle.x);
+      point1.y = cvRound(rectangle.y) + cvRound(c);
+      // When x = end of image
+      point2.x = cvRound(rectangle.x + rectangle.width);
+      point2.y = cvRound(rectangle.y) + cvRound(c - (rectangle.width * m));
     }
 
-		line(image, point1, point2,  Scalar( 0, 0, 255 ), 2);
+    clipLine(rectangle, point1, point2);
+
+		line(image, point1, point2,  Scalar( 0, 0, 255 ), 1);
 	}
 
 	imwrite("output/foundLines.jpg", image);
@@ -421,26 +412,24 @@ int main( int argc, const char** argv ){
   // 1. Read Input Image
 	Mat frame = imread(argv[1], CV_LOAD_IMAGE_COLOR);
 
-	// ADDED: 2. Find lines within input image
-	// findLines(imgName);
-
-	// 3. Load the Strong Classifier in a structure called `Cascade'
+	// 2. Load the Strong Classifier in a structure called `Cascade'
 	if( !cascade.load( cascade_name ) ){ printf("--(!)Error loading\n"); return -1; };
 
-	// 4. Detect Faces with Viola Jones
+	// 3. Detect Faces with Viola Jones
 	detectVJ( frame );
 
-  // Loop through rectangles to detect lines
+  // 4. Remove overlapping boxes
+  // removeOverlaps();
+
+  // 5. Loop through cropped boxes to detect lines
   findLinesInBoxes( frame );
 
-  // Draw Viola Jones boxes
+  // 6. Draw Viola Jones boxes
   displayVJ( frame );
 
-  // Save image with Viola Jones detections
+  // 7. Save image with Viola Jones detections
   imwrite( "output/detectedVJ.jpg", frame );
 
-  // Find lines
-  //findLines(frame);
 
   // Draw final boxes
   // display( frame );
@@ -566,16 +555,18 @@ void displayVJ( Mat frame ){
 }
 
 void findLinesInBoxes( Mat &frame ){
+  Mat frameForCrop = frame.clone();
   Mat croppedImg;
   int linesFound = 0;
 
   for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
-    croppedImg = frame(detectedDartboardsVJ[i]);
+    croppedImg = frameForCrop(detectedDartboardsVJ[i]);
+    imwrite("output/crop.jpg", croppedImg);
     linesFound = findLines(frame, croppedImg, detectedDartboardsVJ[i]);
     // std::cout << croppedImg.rows << " " << croppedImg.cols << '\n';
 
     // if (linesFound > 10000)
-    imwrite("output/crop.jpg", croppedImg);
+    //imwrite("output/crop.jpg", croppedImg);
   }
 
 }
