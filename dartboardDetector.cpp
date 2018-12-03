@@ -34,7 +34,7 @@ void getThresholdedMag(	Mat &input,	Mat &output );
 void getHoughSpace(	Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width,	int height,	Mat &output,
                     std::vector<double> &rhoValues, std::vector<double> &thetaValues);
 void drawFoundLines( Mat &image, int width, int height, std::vector<double> &rhoValues, std::vector<double> &thetaValues, Mat &frame );
-int findLines( Mat &croppedImage, Mat &frame );
+int findLines( Mat &frame );
 int findCircles( Mat &frame );
 
 void findLinesInBoxes( Mat &frame );
@@ -46,6 +46,7 @@ CascadeClassifier cascade;
 std::vector<Rect> detectedDartboardsVJ;
 std::vector<Rect> detectedDartboardsFinal;
 std::vector<Rect> trueDartboards;
+//std::vector<line> v;
 
 /* Functions */
 
@@ -252,20 +253,36 @@ void drawFoundLines( Mat &image, int width, int height, std::vector<double> &rho
 		Point point1, point2;
 		double theta = thetaValues[i];
 		double rho = rhoValues[i];
-
+    double m, c;
 		double radians = theta * (PI/ 180);
 
-		//std::cout << rho << "and" << radians << '\n';
+    // Using y = mx + c
+    // y = (p/sin(theta)) - x(cos(theta)/sin(theta))
+    m = cos(radians) / sin(radians);
+    c = (rho - width - height)/sin(radians);
 
-		double a = cos(radians);
-		double b = sin(radians);
-		double x0 = a * (rho - width - height);
-		double y0 = b * (rho - width - height);
+    // If line is perfectly vertical or horizonal, stay in parameter
+    // space
+    if (cvIsInf(c)) {
+      double a = cos(radians);
+  		double b = sin(radians);
+  		double x0 = a * (rho - width - height);
+  		double y0 = b * (rho - width - height);
 
-		point1.x = cvRound(x0 + 1000*(-b));
-		point1.y = cvRound(y0 + 1000*(a));
-		point2.x = cvRound(x0 - 1000*(-b));
-		point2.y = cvRound(y0 - 1000*(a));
+  		point1.x = cvRound(x0 + width*(-b));
+  		point1.y = cvRound(y0 + height*(a));
+  		point2.x = cvRound(x0 - width*(-b));
+  		point2.y = cvRound(y0 - height*(a));
+    }
+    // Else use x,y space
+    else {
+      // When x = 0
+      point1.x = 0;
+      point1.y = cvRound(c);
+      // When x = end of image
+      point2.x = cvRound(width);
+      point2.y = c - (width * m);
+    }
 
 		line(image, point1, point2,  Scalar( 0, 0, 255 ), 2);
 	}
@@ -273,7 +290,7 @@ void drawFoundLines( Mat &image, int width, int height, std::vector<double> &rho
 	imwrite("output/foundLines.jpg", image);
 }
 
-int findLines( Mat &croppedImage, Mat &frame ) {
+int findLines( Mat &frame ) {
 
   Mat image = frame;
   // image = imread(imgName, 1 );
@@ -282,16 +299,16 @@ int findLines( Mat &croppedImage, Mat &frame ) {
   // imshow( "Original Image", image );
   Mat grayImage;
 
-  cvtColor( croppedImage, grayImage, CV_BGR2GRAY );
+  cvtColor( image, grayImage, CV_BGR2GRAY );
   equalizeHist( grayImage, grayImage );
 
   GaussianBlur(grayImage, grayImage, Size(3,3), 0, 0, BORDER_DEFAULT);
 
   Mat dfdx;
-  dfdx.create(croppedImage.size(), CV_64F);
+  dfdx.create(image.size(), CV_64F);
 
   Mat dfdy;
-  dfdy.create(croppedImage.size(), CV_64F);
+  dfdy.create(image.size(), CV_64F);
 
 	Mat dxKernel = (Mat_<double>(3,3) << -1, 0, 1,
 																			 -2, 0, 2,
@@ -302,13 +319,13 @@ int findLines( Mat &croppedImage, Mat &frame ) {
 																		    1, 2, 1);
 
   Mat gradientMagnitude;
-  gradientMagnitude.create(croppedImage.size(), CV_64F);
+  gradientMagnitude.create(image.size(), CV_64F);
 
   Mat gradientDirection;
-	gradientDirection.create(croppedImage.size(), CV_64F);
+	gradientDirection.create(image.size(), CV_64F);
 
 	Mat thresholdedMag;
-	thresholdedMag.create(croppedImage.size(), CV_64F);
+	thresholdedMag.create(image.size(), CV_64F);
 
 	Mat houghSpace;
 
@@ -325,9 +342,9 @@ int findLines( Mat &croppedImage, Mat &frame ) {
 
 	getThresholdedMag(gradientMagnitude, thresholdedMag);
 
-	getHoughSpace(thresholdedMag, gradientDirection, 240, croppedImage.cols, croppedImage.rows, houghSpace, rhoValues, thetaValues);
+	getHoughSpace(thresholdedMag, gradientDirection, 240, image.cols, image.rows, houghSpace, rhoValues, thetaValues);
 
-	drawFoundLines(image, croppedImage.cols, croppedImage.rows, rhoValues, thetaValues, frame);
+	drawFoundLines(image, image.cols, image.rows, rhoValues, thetaValues, frame);
 
   return rhoValues.size();
 }
@@ -380,7 +397,7 @@ int findCircles( Mat &frame ) {
 
 	getThresholdedMag(gradientMagnitude, thresholdedMag);
 
-
+  return 0;
 }
 
 int main( int argc, const char** argv ){
@@ -406,7 +423,7 @@ int main( int argc, const char** argv ){
   imwrite( "output/detectedVJ.jpg", frame );
 
   // Find lines
-  findLines(frame, frame);
+  findLines(frame);
 
   // Loop through rectangles to detect lines
   // findLinesInBoxes( frame );
@@ -540,7 +557,7 @@ void findLinesInBoxes( Mat &frame ){
 
   // for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
     croppedImg = frame(detectedDartboardsVJ[6]);
-    linesFound = findLines(croppedImg, frame);
+    linesFound = findLines(frame);
     // std::cout << croppedImg.rows << " " << croppedImg.cols << '\n';
 
     // if (linesFound > 10000)

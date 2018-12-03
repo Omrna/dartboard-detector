@@ -23,7 +23,6 @@ void getHoughSpace(	Mat &thresholdedMag,Mat &gradientDirection,	int threshold, i
 
 void drawFoundLines( Mat &image, int width, int height );
 
-
 int main(int argc, const char** argv) {
 
 	const char* imgName = argv[1];
