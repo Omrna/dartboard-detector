@@ -23,26 +23,29 @@ using namespace std;
 using namespace cv;
 
 /** Function Headers */
-void detectAndDisplay( Mat frame );
+void detectVJ( Mat frame );
+void displayVJ( Mat frame );
 float F1Test( int facesDetected, const char* imgName, Mat frame );
 
 void convolution(	Mat &input,	int size,	int direction,	Mat kernel,	Mat &output );
 void getMagnitude( Mat &dfdx, Mat &dfdy, Mat &output );
 void getDirection( Mat &dfdx, Mat &dfdy, Mat &output );
 void getThresholdedMag(	Mat &input,	Mat &output );
-void getHoughSpace(	Mat &thresholdedMag, Mat &gradientDirection,	int threshold, int width,	int height,	Mat &output );
-void drawFoundLines( Mat &image, int width, int height );
-void findLines( const char* imgName );
+void getHoughSpace(	Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width,	int height,	Mat &output,
+                    std::vector<double> &rhoValues, std::vector<double> &thetaValues);
+void drawFoundLines( Mat &image, int width, int height, std::vector<double> &rhoValues, std::vector<double> &thetaValues, Mat &frame );
+int findLines( Mat &croppedImage, Mat &frame );
+int findCircles( Mat &frame );
+
+void findLinesInBoxes( Mat &frame );
 
 /** Global variables */
 String cascade_name = "cascade.xml";
 CascadeClassifier cascade;
 
-std::vector<Rect> detectedDartboards;
+std::vector<Rect> detectedDartboardsVJ;
+std::vector<Rect> detectedDartboardsFinal;
 std::vector<Rect> trueDartboards;
-
-std::vector<double> rhoValues;
-std::vector<double> thetaValues;
 
 /* Functions */
 
@@ -57,10 +60,8 @@ void convolution(Mat &input, int size, int direction, Mat kernel, Mat &output) {
 		kernelRadiusX, kernelRadiusX, kernelRadiusY, kernelRadiusY,
 		BORDER_REPLICATE );
 
-
 	// Gaussian blur before finding derivation
 	GaussianBlur(paddedInput, paddedInput, Size(3,3), 0, 0, BORDER_DEFAULT);
-
 
   // Time to do convolution
   for (int i = 0; i < input.rows; i++) {
@@ -173,15 +174,14 @@ void getThresholdedMag(Mat &input, Mat &output) {
   imwrite("output/thresholded.jpg", output);
 }
 
-void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width, int height, Mat &houghSpace) {
+void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width, int height, Mat &houghSpace, std::vector<double> &rhoValues, std::vector<double> &thetaValues) {
 	//double maxDist = sqrt(pow(width, 2) + pow(height, 2)) / 2;
-
 
 	double rho = 0.0;
 	double radians = 0.0;
 	double directionTheta = 0.0;
 	double directionVal = 0.0;
-	int angleRange = 5;
+	int angleRange = 1;
 
 	// houghSpace.create(round(maxDist), 180, CV_64F);
 
@@ -220,7 +220,7 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 	cv::minMaxLoc(houghSpace, &min, &max);
 	// double houghSpaceThreshold = min + ((max - min)/2);
 
-	std::cout << max << " and " << min << '\n';
+	// std::cout << max << " and " << min << '\n';
 
 	// Thresholding Hough space
 	for (int y = 0; y < houghSpace.rows; y++) {
@@ -243,7 +243,7 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 	imwrite("output/houghSpace.jpg", houghSpace);
 }
 
-void drawFoundLines( Mat &image, int width, int height ){
+void drawFoundLines( Mat &image, int width, int height, std::vector<double> &rhoValues, std::vector<double> &thetaValues, Mat &frame ){
 	int centreX = width / 2;
 	int centreY = height /2;
 
@@ -267,27 +267,31 @@ void drawFoundLines( Mat &image, int width, int height ){
 		point2.x = cvRound(x0 - 1000*(-b));
 		point2.y = cvRound(y0 - 1000*(a));
 
-		line(image, point1, point2,  Scalar( 0, 255, 0 ), 2);
+		line(image, point1, point2,  Scalar( 0, 0, 255 ), 2);
 	}
 
 	imwrite("output/foundLines.jpg", image);
 }
 
-void findLines( const char* imgName ) {
+int findLines( Mat &croppedImage, Mat &frame ) {
 
-  Mat image;
-  image = imread(imgName, 1 );
+  Mat image = frame;
+  // image = imread(imgName, 1 );
 
   // namedWindow( "Original Image", CV_WINDOW_AUTOSIZE );
   // imshow( "Original Image", image );
+  Mat grayImage;
 
-  cvtColor( image, image, CV_BGR2GRAY );
+  cvtColor( croppedImage, grayImage, CV_BGR2GRAY );
+  equalizeHist( grayImage, grayImage );
+
+  GaussianBlur(grayImage, grayImage, Size(3,3), 0, 0, BORDER_DEFAULT);
 
   Mat dfdx;
-  dfdx.create(image.size(), CV_64F);
+  dfdx.create(croppedImage.size(), CV_64F);
 
   Mat dfdy;
-  dfdy.create(image.size(), CV_64F);
+  dfdy.create(croppedImage.size(), CV_64F);
 
 	Mat dxKernel = (Mat_<double>(3,3) << -1, 0, 1,
 																			 -2, 0, 2,
@@ -298,29 +302,85 @@ void findLines( const char* imgName ) {
 																		    1, 2, 1);
 
   Mat gradientMagnitude;
-  gradientMagnitude.create(image.size(), CV_64F);
+  gradientMagnitude.create(croppedImage.size(), CV_64F);
 
   Mat gradientDirection;
-	gradientDirection.create(image.size(), CV_64F);
+	gradientDirection.create(croppedImage.size(), CV_64F);
 
 	Mat thresholdedMag;
-	thresholdedMag.create(image.size(), CV_64F);
+	thresholdedMag.create(croppedImage.size(), CV_64F);
 
 	Mat houghSpace;
 
-	Mat foundLines = imread( imgName, 1 );
+	// Mat foundLines = image;
 
-  convolution(image, 3, 0, dxKernel, dfdx);
-  convolution(image, 3, 1, dyKernel, dfdy);
+  std::vector<double> rhoValues;
+  std::vector<double> thetaValues;
+
+  convolution(grayImage, 3, 0, dxKernel, dfdx);
+  convolution(grayImage, 3, 1, dyKernel, dfdy);
 
 	getMagnitude(dfdx, dfdy, gradientMagnitude);
 	getDirection(dfdx, dfdy, gradientDirection);
 
 	getThresholdedMag(gradientMagnitude, thresholdedMag);
 
-	getHoughSpace(thresholdedMag, gradientDirection, 240, image.cols, image.rows, houghSpace);
+	getHoughSpace(thresholdedMag, gradientDirection, 240, croppedImage.cols, croppedImage.rows, houghSpace, rhoValues, thetaValues);
 
-	drawFoundLines(foundLines, image.cols, image.rows);
+	drawFoundLines(image, croppedImage.cols, croppedImage.rows, rhoValues, thetaValues, frame);
+
+  return rhoValues.size();
+}
+
+int findCircles( Mat &frame ) {
+
+  Mat image = frame;
+  Mat grayImage;
+
+  cvtColor( image, grayImage, CV_BGR2GRAY );
+  equalizeHist( grayImage, grayImage );
+
+  GaussianBlur(grayImage, grayImage, Size(3,3), 0, 0, BORDER_DEFAULT);
+
+  Mat dfdx;
+  dfdx.create(grayImage.size(), CV_64F);
+
+  Mat dfdy;
+  dfdy.create(grayImage.size(), CV_64F);
+
+	Mat dxKernel = (Mat_<double>(3,3) << -1, 0, 1,
+																			 -2, 0, 2,
+																			 -1, 0, 1);
+
+  Mat dyKernel = (Mat_<double>(3,3) << -1,-2,-1,
+																		    0, 0, 0,
+																		    1, 2, 1);
+
+  Mat gradientMagnitude;
+  gradientMagnitude.create(grayImage.size(), CV_64F);
+
+  Mat gradientDirection;
+	gradientDirection.create(grayImage.size(), CV_64F);
+
+	Mat thresholdedMag;
+	thresholdedMag.create(grayImage.size(), CV_64F);
+
+	Mat houghSpace;
+
+	// Mat foundLines = image;
+
+  std::vector<double> rhoValues;
+  std::vector<double> thetaValues;
+
+  convolution(grayImage, 3, 0, dxKernel, dfdx);
+  convolution(grayImage, 3, 1, dyKernel, dfdy);
+
+	getMagnitude(dfdx, dfdy, gradientMagnitude);
+	getDirection(dfdx, dfdy, gradientDirection);
+
+	getThresholdedMag(gradientMagnitude, thresholdedMag);
+
+
 }
 
 int main( int argc, const char** argv ){
@@ -331,19 +391,34 @@ int main( int argc, const char** argv ){
 	Mat frame = imread(argv[1], CV_LOAD_IMAGE_COLOR);
 
 	// ADDED: 2. Find lines within input image
-	findLines(imgName);
+	// findLines(imgName);
 
 	// 3. Load the Strong Classifier in a structure called `Cascade'
 	if( !cascade.load( cascade_name ) ){ printf("--(!)Error loading\n"); return -1; };
 
-	// 4. Detect Faces and Display Result
-	detectAndDisplay( frame );
+	// 4. Detect Faces with Viola Jones
+	detectVJ( frame );
+
+  // Draw Viola Jones boxes
+  displayVJ( frame );
+
+  // Save image with Viola Jones detections
+  imwrite( "output/detectedVJ.jpg", frame );
+
+  // Find lines
+  findLines(frame, frame);
+
+  // Loop through rectangles to detect lines
+  // findLinesInBoxes( frame );
+
+  // Draw final boxes
+  // display( frame );
 
 	// ADDED: 5. Perform F1 test
-	float f1score = F1Test(detectedDartboards.size(), imgName, frame);
+	float f1score = F1Test(detectedDartboardsVJ.size(), imgName, frame);
 
 	// 6. Save Result Image
-	imwrite( "output/detected.jpg", frame );
+	// imwrite( "output/detected.jpg", frame );
 
 	return 0;
 }
@@ -393,10 +468,10 @@ float F1Test( int facesDetected, const char* imgName, Mat frame ){
 	int falsePositives = 0;
 
 	// Compare each detected face to every ground truth face
-	for (int i = 0; i < detectedDartboards.size(); i++) {
+	for (int i = 0; i < detectedDartboardsVJ.size(); i++) {
 		for (int j = 0; j < trueDartboards.size(); j++) {
 			// Get intersection and check matching area percentage
-			Rect intersection = detectedDartboards[i] & trueDartboards[j];
+			Rect intersection = detectedDartboardsVJ[i] & trueDartboards[j];
 			float intersectionArea = intersection.area();
 
 			// If there is an intersection, check percentage of intersection area
@@ -436,7 +511,7 @@ float F1Test( int facesDetected, const char* imgName, Mat frame ){
 	return f1;
 }
 
-void detectAndDisplay( Mat frame ){
+void detectVJ( Mat frame ){
 	Mat frame_gray;
 
 	// 1. Prepare Image by turning it into Grayscale and normalising lighting
@@ -444,15 +519,33 @@ void detectAndDisplay( Mat frame ){
 	equalizeHist( frame_gray, frame_gray );
 
 	// 2. Perform Viola-Jones Object Detection
-	cascade.detectMultiScale( frame_gray, detectedDartboards, 1.1, 1, 0|CV_HAAR_SCALE_IMAGE, Size(50, 50), Size(500,500) );
+	cascade.detectMultiScale( frame_gray, detectedDartboardsVJ, 1.1, 1, 0|CV_HAAR_SCALE_IMAGE, Size(50, 50), Size(500,500) );
 
   // 3. Print number of Faces found
-	std::cout << "dartboards detected: " << detectedDartboards.size() << std::endl;
+	std::cout << "dartboards detected with Viola Jones: " << detectedDartboardsVJ.size() << std::endl;
 
-  // 4. Draw box around faces found
-	for( int i = 0; i < detectedDartboards.size(); i++ )
+}
+
+void displayVJ( Mat frame ){
+  // Draw box around faces found
+	for( int i = 0; i < detectedDartboardsVJ.size(); i++ )
 	{
-		rectangle(frame, Point(detectedDartboards[i].x, detectedDartboards[i].y), Point(detectedDartboards[i].x + detectedDartboards[i].width, detectedDartboards[i].y + detectedDartboards[i].height), Scalar( 0, 255, 0 ), 2);
+		rectangle(frame, Point(detectedDartboardsVJ[i].x, detectedDartboardsVJ[i].y), Point(detectedDartboardsVJ[i].x + detectedDartboardsVJ[i].width, detectedDartboardsVJ[i].y + detectedDartboardsVJ[i].height), Scalar( 0, 255, 0 ), 2);
 	}
+}
 
+void findLinesInBoxes( Mat &frame ){
+  Mat croppedImg;
+  int linesFound = 0;
+
+  // for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
+    croppedImg = frame(detectedDartboardsVJ[6]);
+    linesFound = findLines(croppedImg, frame);
+    // std::cout << croppedImg.rows << " " << croppedImg.cols << '\n';
+
+    // if (linesFound > 10000)
+    imwrite("output/crop.jpg", croppedImg);
+  // }
+  // findLines(frame);
+  // imwrite("output/crop.jpg", croppedImg);
 }
