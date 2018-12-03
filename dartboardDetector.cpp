@@ -22,6 +22,14 @@ g++ dartboardDetector.cpp /usr/lib/libopencv_core.so.2.4
 using namespace std;
 using namespace cv;
 
+/** Initialise Classes **/
+class lineData {
+  public:
+    double m, c;
+    Point point1, point2;
+    lineData(double m, double c, Point point1, Point point2) : m(m), c(c), point1(point1), point2(point2) {}
+};
+
 /** Function Headers */
 void detectVJ( Mat frame );
 void displayVJ( Mat frame );
@@ -34,11 +42,11 @@ void getDirection( Mat &dfdx, Mat &dfdy, Mat &output );
 void getThresholdedMag(	Mat &input,	Mat &output );
 void getHoughSpace(	Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width,	int height,	Mat &output,
                     std::vector<double> &rhoValues, std::vector<double> &thetaValues);
-void drawFoundLines( Mat &frame, Mat &croppedImg, std::vector<double> &rhoValues, std::vector<double> &thetaValues );
-int findLines( Mat &frame, Mat &croppedImg, Rect rectangle );
+void extractLines( Mat &frame, Mat &croppedImg, std::vector<double> &rhoValues, std::vector<double> &thetaValues, vector<lineData> &lines );
+int lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle );
 int findCircles( Mat &frame );
 
-void findLinesInBoxes( Mat &frame );
+void analyseBoxes( Mat &frame );
 
 /** Global variables */
 String cascade_name = "cascade.xml";
@@ -245,7 +253,7 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 	imwrite("output/houghSpace.jpg", houghSpace);
 }
 
-void drawFoundLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<double> &rhoValues, std::vector<double> &thetaValues ){
+void extractLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<double> &rhoValues, std::vector<double> &thetaValues, vector<lineData> &lines ){
 
   int frameWidth = frame.cols;
   int frameHeight = frame.rows;
@@ -278,14 +286,19 @@ void drawFoundLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<do
 
       clipLine(rectangle, point1, point2);
 
+      lineData currentLine (m, c, point1, point2);
+
+      lines.push_back(currentLine);
+
   		line(image, point1, point2,  Scalar( 0, 0, 255 ), 1);
     }
 	}
+  // std::cout << lines[1] << '\n';
 
 	// imwrite("output/foundLines.jpg", image);
 }
 
-int findLines( Mat &frame, Mat &croppedImg, Rect rectangle ) {
+int lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle ) {
 
   Mat image = croppedImg;
 
@@ -322,10 +335,10 @@ int findLines( Mat &frame, Mat &croppedImg, Rect rectangle ) {
 
 	Mat houghSpace;
 
-	// Mat foundLines = image;
-
   std::vector<double> rhoValues;
   std::vector<double> thetaValues;
+
+  vector<lineData> lines;
 
   convolution(grayImage, 3, 0, dxKernel, dfdx);
   convolution(grayImage, 3, 1, dyKernel, dfdy);
@@ -337,7 +350,7 @@ int findLines( Mat &frame, Mat &croppedImg, Rect rectangle ) {
 
 	getHoughSpace(thresholdedMag, gradientDirection, 240, image.cols, image.rows, houghSpace, rhoValues, thetaValues);
 
-	drawFoundLines(frame, image, rectangle, rhoValues, thetaValues);
+	extractLines(frame, image, rectangle, rhoValues, thetaValues, lines);
 
   return rhoValues.size();
 }
@@ -414,13 +427,11 @@ int main( int argc, const char** argv ){
   imwrite( "output/detectedVJ.jpg", VJOutput );
 
   // 6. Loop through cropped boxes to detect lines
-  findLinesInBoxes( frame );
+  analyseBoxes( frame );
 
   // 7. Show and save Viola Jones boundaries on line detections
   displayVJ( frame );
   imwrite("output/foundLines.jpg", frame);
-
-
 
 
 	// ADDED: 8. Perform F1 test
@@ -543,14 +554,14 @@ void displayVJ( Mat frame ){
 	}
 }
 
-void findLinesInBoxes( Mat &frame ){
+void analyseBoxes( Mat &frame ){
   Mat frameForCrop = frame.clone();
   Mat croppedImg;
   int linesFound = 0;
 
   for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
     croppedImg = frameForCrop(detectedDartboardsVJ[i]);
-    linesFound = findLines(frame, croppedImg, detectedDartboardsVJ[i]);
+    linesFound = lineDetector(frame, croppedImg, detectedDartboardsVJ[i]);
   }
 
 }
