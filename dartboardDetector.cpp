@@ -199,7 +199,7 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 
 				directionTheta = round(directionTheta);
 
-				for (int theta = directionTheta - angleRange; theta < directionTheta + angleRange; theta += 1) {
+				for (int theta = directionTheta - angleRange; theta < directionTheta + angleRange + 1; theta += 1) {
 				// for (int theta = 0; theta < 360; theta++){
 					radians = theta * (PI/ 180);
 
@@ -263,39 +263,26 @@ void drawFoundLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<do
     double m, c;
 		double radians = theta * (PI/ 180);
 
-    // Using y = mx + c
-    // y = (p/sin(theta)) - x(cos(theta)/sin(theta))
-    m = cos(radians) / sin(radians);
-    c = (rho - cropWidth - cropHeight)/sin(radians);
+    if (thetaValues.size() < 10000) {
+      // Using y = mx + c
+      // y = (p/sin(theta)) - x(cos(theta)/sin(theta))
+      m = cos(radians) / sin(radians);
+      c = (rho - cropWidth - cropHeight)/sin(radians);
 
-    // If line is perfectly vertical or horizonal, stay in parameter
-    // space
-    if (cvIsInf(c)) {
-      double a = cos(radians);
-  		double b = sin(radians);
-  		double x0 = a * (rho - cropWidth - cropHeight);
-  		double y0 = b * (rho - cropWidth - cropHeight);
-
-  		point1.x = cvRound(x0 + cropWidth*(-b));
-  		point1.y = cvRound(y0 + cropHeight*(a));
-  		point2.x = cvRound(x0 - cropWidth*(-b));
-  		point2.y = cvRound(y0 - cropHeight*(a));
-    }
-    else {
       // When x = rectangle.x and y = rectangle.y + height
       point1.x = cvRound(rectangle.x);
       point1.y = cvRound(rectangle.y) + cvRound(c);
       // When x = end of image
       point2.x = cvRound(rectangle.x + rectangle.width);
       point2.y = cvRound(rectangle.y) + cvRound(c - (rectangle.width * m));
+
+      clipLine(rectangle, point1, point2);
+
+  		line(image, point1, point2,  Scalar( 0, 0, 255 ), 1);
     }
-
-    clipLine(rectangle, point1, point2);
-
-		line(image, point1, point2,  Scalar( 0, 0, 255 ), 1);
 	}
 
-	imwrite("output/foundLines.jpg", image);
+	// imwrite("output/foundLines.jpg", image);
 }
 
 int findLines( Mat &frame, Mat &croppedImg, Rect rectangle ) {
@@ -305,9 +292,10 @@ int findLines( Mat &frame, Mat &croppedImg, Rect rectangle ) {
   Mat grayImage;
 
   cvtColor( image, grayImage, CV_BGR2GRAY );
-  equalizeHist( grayImage, grayImage );
+  // equalizeHist( grayImage, grayImage );
 
   GaussianBlur(grayImage, grayImage, Size(3,3), 0, 0, BORDER_DEFAULT);
+  // GaussianBlur(grayImage, grayImage, Size(3,3), 0, 0, BORDER_DEFAULT);
 
   Mat dfdx;
   dfdx.create(image.size(), CV_64F);
@@ -411,6 +399,7 @@ int main( int argc, const char** argv ){
 
   // 1. Read Input Image
 	Mat frame = imread(argv[1], CV_LOAD_IMAGE_COLOR);
+  Mat VJOutput = frame.clone();
 
 	// 2. Load the Strong Classifier in a structure called `Cascade'
 	if( !cascade.load( cascade_name ) ){ printf("--(!)Error loading\n"); return -1; };
@@ -418,23 +407,23 @@ int main( int argc, const char** argv ){
 	// 3. Detect Faces with Viola Jones
 	detectVJ( frame );
 
-  // 4. Remove overlapping boxes
-  // removeOverlaps();
+  // 4. Draw Viola Jones boxes
+  displayVJ( VJOutput );
 
-  // 5. Loop through cropped boxes to detect lines
+  // 5. Save image with Viola Jones detections
+  imwrite( "output/detectedVJ.jpg", VJOutput );
+
+  // 6. Loop through cropped boxes to detect lines
   findLinesInBoxes( frame );
 
-  // 6. Draw Viola Jones boxes
+  // 7. Show and save Viola Jones boundaries on line detections
   displayVJ( frame );
-
-  // 7. Save image with Viola Jones detections
-  imwrite( "output/detectedVJ.jpg", frame );
+  imwrite("output/foundLines.jpg", frame);
 
 
-  // Draw final boxes
-  // display( frame );
 
-	// ADDED: 5. Perform F1 test
+
+	// ADDED: 8. Perform F1 test
 	float f1score = F1Test(detectedDartboardsVJ.size(), imgName, frame);
 
 	// 6. Save Result Image
@@ -561,12 +550,7 @@ void findLinesInBoxes( Mat &frame ){
 
   for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
     croppedImg = frameForCrop(detectedDartboardsVJ[i]);
-    imwrite("output/crop.jpg", croppedImg);
     linesFound = findLines(frame, croppedImg, detectedDartboardsVJ[i]);
-    // std::cout << croppedImg.rows << " " << croppedImg.cols << '\n';
-
-    // if (linesFound > 10000)
-    //imwrite("output/crop.jpg", croppedImg);
   }
 
 }
