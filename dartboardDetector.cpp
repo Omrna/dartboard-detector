@@ -43,7 +43,8 @@ void getThresholdedMag(	Mat &input,	Mat &output );
 void getHoughSpace(	Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width,	int height,	Mat &output,
                     std::vector<double> &rhoValues, std::vector<double> &thetaValues);
 void extractLines( Mat &frame, Mat &croppedImg, std::vector<double> &rhoValues, std::vector<double> &thetaValues, vector<lineData> &lines );
-int lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle );
+void lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle );
+void detectionDecision( Mat &image, Rect rectangle, vector<lineData> &lines);
 int findCircles( Mat &frame );
 
 void analyseBoxes( Mat &frame );
@@ -263,6 +264,12 @@ void extractLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<doub
 
   Mat image = frame;
 
+  // if (rectangle == detectedDartboardsVJ[2]){
+  //   for (int i = 0; i < thetaValues.size(); i++) {
+  //     std::cout << thetaValues[i] << '\n';
+  //   }
+  // }
+
 	for (int i = 0; i < rhoValues.size(); i++) {
 
 		Point point1, point2;
@@ -298,7 +305,11 @@ void extractLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<doub
 	// imwrite("output/foundLines.jpg", image);
 }
 
-int lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle ) {
+void detectionDecision( Mat &image, Rect rectangle, vector<lineData> &lines) {
+  int i = 0;
+}
+
+void lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle ) {
 
   Mat image = croppedImg;
 
@@ -352,7 +363,7 @@ int lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle ) {
 
 	extractLines(frame, image, rectangle, rhoValues, thetaValues, lines);
 
-  return rhoValues.size();
+  detectionDecision(image, rectangle, lines);
 }
 
 int findCircles( Mat &frame ) {
@@ -561,7 +572,7 @@ void analyseBoxes( Mat &frame ){
 
   for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
     croppedImg = frameForCrop(detectedDartboardsVJ[i]);
-    linesFound = lineDetector(frame, croppedImg, detectedDartboardsVJ[i]);
+    lineDetector(frame, croppedImg, detectedDartboardsVJ[i]);
   }
 
 }
