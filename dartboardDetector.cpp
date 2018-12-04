@@ -39,6 +39,7 @@ class lineData {
 /** Function Headers */
 void detectVJ( Mat frame );
 void displayVJ( Mat frame );
+void displayHough( Mat frame );
 float F1Test( int facesDetected, const char* imgName, Mat frame );
 void removeOverlaps();
 
@@ -332,6 +333,7 @@ void drawLines( Mat &frame, vector<lineData> &lines ) {
     Point point2 = lines[i].point2;
     line(frame, point1, point2,  Scalar( 255, 0, 0 ), 1);
   }
+  // imwrite(foun)
 }
 
 Rect reduceBox( Rect box ){
@@ -355,17 +357,40 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
 
   // Find smaller search space of 25% of original box with centred axis
   Rect reducedBox = reduceBox(box);
-
-  rectangle(frame, Point(reducedBox.x, reducedBox.y), Point(reducedBox.x + reducedBox.width, reducedBox.y + reducedBox.height), Scalar( 0, 255, 0 ), 2);
-
-  // Create a voting matrix where the pixel is incremented if there is an
-  // intersection between two different lines at that point
-  Mat voting(reducedBox.height, reducedBox.width, CV_64F);
+  vector<Point> midpoints;
+  int midpointCounter = 0;
 
   int boxWidthBound = reducedBox.x + reducedBox.width;
   int boxHeightBound = reducedBox.y + reducedBox.height;
 
-  // Voting
+  if (lines.size() > 2) {
+    for (int i = 0; i < lines.size(); i++) {
+      lineData line = lines[i];
+      double midpointX = (line.point1.x + line.point2.x)/2;
+      double midpointY = (line.point1.y + line.point2.y)/2;
+
+      bool xInBox = midpointX >= reducedBox.x && midpointX <= boxWidthBound;
+      bool yInBox = midpointY >= reducedBox.y && midpointY <= boxHeightBound;
+
+      if (xInBox && yInBox) midpointCounter++;
+    }
+
+    // std::cout << "lines: " << lines.size() << '\n';
+    //
+    // std::cout << "midpoints: " << midpointCounter << '\n';
+    if (midpointCounter > 4) {
+      detectedDartboardsFinal.push_back(box);
+    }
+  }
+
+  rectangle(frame, Point(reducedBox.x, reducedBox.y), Point(reducedBox.x + reducedBox.width, reducedBox.y + reducedBox.height), Scalar( 0, 255, 0 ), 2);
+
+  // imwrite("output/foundLines.jpg", frame);
+
+  /* Voting
+  // Create a voting matrix where the pixel is incremented if there is an
+  // intersection between two different lines at that point
+  // Mat voting(reducedBox.height, reducedBox.width, CV_64F);
   for (int x = reducedBox.x; x < boxWidthBound; x++) {
     for (int y = reducedBox.y; y < boxHeightBound; y++) {
       for (int i = 0; i < lines.size(); i++) {
@@ -378,18 +403,26 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
           lineData line1 = lines[i];
           lineData line2 = lines[j];
 
-          double y1 = (line1.m * x) + line1.c;
-          double y2 = (line2.m * x) + line2.c;
+          // double y1 = cvRound((line1.m * x) + line1.c);
+          // double y2 = cvRound((line2.m * x) + line2.c);
 
-          // std::cout << "y1: " << y1 << " and y2: " << y2 << '\n';
+          double y1 = ((line1.m * x) + line1.c);
+          double y2 = ((line2.m * x) + line2.c);
 
-          if (cvRound(y1) == cvRound(y2)) {
+          if (i == 0 && j == 1)
+          std::cout << "y1: " << y1 << " and y2: " << y2 << '\n';
+
+          //if (y1 >= y2 - 1 && y1 <= y2 + 1) {
+          if (y1 == y2){
+            std::cout << "true" << '\n';
             voting.at<double>( y - reducedBox.y , x -reducedBox.x )++;
           }
         }
       }
     }
-  }
+  }*/
+
+
 }
 
 void lineDetector( Mat &frame, Mat &croppedImg, Rect box ) {
@@ -447,12 +480,14 @@ void lineDetector( Mat &frame, Mat &croppedImg, Rect box ) {
 
 	extractLines(frame, image, box, rhoValues, thetaValues, lines);
 
-  if (lines.size() > 1) filteredLines = filterLines(lines, 10);
+  if (lines.size() > 1)
+    filteredLines = filterLines(lines, 10);
 
   detectionDecision(frame, image, box, filteredLines);
 
   drawLines(frame, filteredLines);
 
+  imwrite("output/foundLines.jpg", frame);
 }
 
 int findCircles( Mat &frame ) {
@@ -610,11 +645,19 @@ void detectVJ( Mat frame ){
 }
 
 void displayVJ( Mat frame ){
-  // Draw box around faces found
+  // Draw box around dartboards found with Viola Jones
 	for( int i = 0; i < detectedDartboardsVJ.size(); i++ )
 	{
 		rectangle(frame, Point(detectedDartboardsVJ[i].x, detectedDartboardsVJ[i].y), Point(detectedDartboardsVJ[i].x + detectedDartboardsVJ[i].width, detectedDartboardsVJ[i].y + detectedDartboardsVJ[i].height), Scalar( 0, 255, 0 ), 2);
 	}
+}
+
+void displayHough( Mat frame ){
+  // Draw box around dartboards found with Viola Jones + hough
+  for( int i = 0; i < detectedDartboardsVJ.size(); i++ )
+  {
+    rectangle(frame, Point(detectedDartboardsFinal[i].x, detectedDartboardsFinal[i].y), Point(detectedDartboardsFinal[i].x + detectedDartboardsFinal[i].width, detectedDartboardsFinal[i].y + detectedDartboardsFinal[i].height), Scalar( 0, 255, 0 ), 2);
+  }
 }
 
 void analyseBoxes( Mat &frame ){
@@ -633,27 +676,30 @@ int main( int argc, const char** argv ){
 
   // 1. Read Input Image
 	Mat frame = imread(argv[1], CV_LOAD_IMAGE_COLOR);
-  Mat VJOutput = frame.clone();
+  Mat VJFrame = frame.clone();
+  Mat houghFrame = frame.clone();
+  Mat finalOutput = frame.clone();
 
 	// 2. Load the Strong Classifier in a structure called `Cascade'
 	if( !cascade.load( cascade_name ) ){ printf("--(!)Error loading\n"); return -1; };
 
 	// 3. Detect Faces with Viola Jones
-	detectVJ( frame );
+	detectVJ( VJFrame );
 
   // 4. Draw Viola Jones boxes
-  displayVJ( VJOutput );
+  displayVJ( VJFrame );
 
   // 5. Save image with Viola Jones detections
-  imwrite( "output/detectedVJ.jpg", VJOutput );
+  imwrite( "output/detectedVJ.jpg", VJFrame );
 
   // 6. Loop through cropped boxes to detect lines and decide if dartboard or not
-  analyseBoxes( frame );
+  analyseBoxes( houghFrame );
 
   // 7. Show and save Viola Jones boundaries on line detections
-  // displayVJ( frame );
-  imwrite("output/foundLines.jpg", frame);
+  if (detectedDartboardsFinal.size() > 0)
+    displayHough( finalOutput );
 
+  imwrite("output/detected.jpg", finalOutput);
 
 	// ADDED: 8. Perform F1 test
 	float f1score = F1Test(detectedDartboardsVJ.size(), imgName, frame);
