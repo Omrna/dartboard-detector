@@ -204,8 +204,13 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 	int angleRange = 1;
 
 	// houghSpace.create(round(maxDist), 180, CV_64F);
+  //imwrite("output/threshMagTest.jpg", thresholdedMag);
+  for (int i= 0; i< thetaValues.size(); i++)
+    std::cout << thetaValues[i] << '\n';
 
 	houghSpace.create(2*(width + height), 360, CV_64F);
+
+  houghSpace = Scalar(0,0,0);
 
 	for (int y = 0; y < thresholdedMag.rows; y++) {
 		for (int x = 0; x < thresholdedMag.cols; x++) {
@@ -228,11 +233,6 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 			}
 		}
 	}
-
-	// Mat img;
-	// img.create(houghSpace.size(), CV_64F);
-
-	imwrite("output/unThresholdedHoughSpace.jpg", houghSpace);
 
 	normalize(houghSpace, houghSpace, 0, 255, NORM_MINMAX);
 
@@ -281,7 +281,7 @@ void extractLines( Mat &frame, Mat &croppedImg, Rect box, std::vector<double> &r
     double m, c;
 		double radians = theta * (PI/ 180);
 
-    if (thetaValues.size() < 10000) {
+    if (thetaValues.size() < 100) {
       // Using y = mx + c
       // y = (p/sin(theta)) - x(cos(theta)/sin(theta))
       m = cos(radians) / sin(radians);
@@ -333,7 +333,6 @@ void drawLines( Mat &frame, vector<lineData> &lines ) {
     Point point2 = lines[i].point2;
     line(frame, point1, point2,  Scalar( 255, 0, 0 ), 1);
   }
-  // imwrite(foun)
 }
 
 Rect reduceBox( Rect box ){
@@ -354,6 +353,8 @@ Rect reduceBox( Rect box ){
 }
 
 void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> &lines) {
+
+  // rectangle(frame, Point(box.x, box.y), Point(box.x + box.width, box.y + box.height), Scalar( 0, 255, 0 ), 2);
 
   // Find smaller search space of 25% of original box with centred axis
   Rect reducedBox = reduceBox(box);
@@ -481,13 +482,14 @@ void lineDetector( Mat &frame, Mat &croppedImg, Rect box ) {
 	extractLines(frame, image, box, rhoValues, thetaValues, lines);
 
   if (lines.size() > 1)
-    filteredLines = filterLines(lines, 10);
+    filteredLines = filterLines(lines, 20);
 
   detectionDecision(frame, image, box, filteredLines);
 
   drawLines(frame, filteredLines);
 
   imwrite("output/foundLines.jpg", frame);
+
 }
 
 int findCircles( Mat &frame ) {
@@ -654,18 +656,21 @@ void displayVJ( Mat frame ){
 
 void displayHough( Mat frame ){
   // Draw box around dartboards found with Viola Jones + hough
-  for( int i = 0; i < detectedDartboardsVJ.size(); i++ )
+  for( int i = 0; i < detectedDartboardsFinal.size(); i++ )
   {
     rectangle(frame, Point(detectedDartboardsFinal[i].x, detectedDartboardsFinal[i].y), Point(detectedDartboardsFinal[i].x + detectedDartboardsFinal[i].width, detectedDartboardsFinal[i].y + detectedDartboardsFinal[i].height), Scalar( 0, 255, 0 ), 2);
   }
 }
 
 void analyseBoxes( Mat &frame ){
-  Mat frameForCrop = frame.clone();
-  Mat croppedImg;
 
   for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
+  // for (int i = 0; i < 2; i ++){
+    Mat frameForCrop = frame.clone();
+    Mat croppedImg;
     croppedImg = frameForCrop(detectedDartboardsVJ[i]);
+    if (i == 1)
+      imwrite("output/crop.jpg", croppedImg);
     lineDetector(frame, croppedImg, detectedDartboardsVJ[i]);
   }
 }
@@ -704,7 +709,7 @@ int main( int argc, const char** argv ){
 	// ADDED: 8. Perform F1 test
 	float f1score = F1Test(detectedDartboardsVJ.size(), imgName, frame);
 
-  std::cout << detectedDartboardsFinal.size() << '\n';
+  std::cout << "dartboards detected with Hough: " <<detectedDartboardsFinal.size() << '\n';
 
 	// 6. Save Result Image
 	// imwrite( "output/detected.jpg", frame );
