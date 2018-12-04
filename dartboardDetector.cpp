@@ -16,6 +16,7 @@ g++ dartboardDetector.cpp /usr/lib/libopencv_core.so.2.4
 #include <sstream>
 #include <vector>
 #include <stdio.h>
+#include <unistd.h>
 
 #define PI 3.14159265
 
@@ -52,7 +53,7 @@ void getHoughSpace(	Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 void extractLines( Mat &frame, Mat &croppedImg, std::vector<double> &rhoValues, std::vector<double> &thetaValues, vector<lineData> &lines );
 void drawLines( Mat &frame, vector<lineData> &lines );
 vector<lineData> filterLines( vector<lineData> &lines, int tolerance );
-void lineDetector( Mat &frame, Mat &croppedImg, Rect box );
+void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box );
 Rect reduceBox( Rect box );
 void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> &lines);
 int findCircles( Mat &frame );
@@ -351,7 +352,7 @@ Rect reduceBox( Rect box ){
 
 void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> &lines) {
 
-  // rectangle(frame, Point(box.x, box.y), Point(box.x + box.width, box.y + box.height), Scalar( 0, 255, 0 ), 2);
+  rectangle(frame, Point(box.x, box.y), Point(box.x + box.width, box.y + box.height), Scalar( 0, 255, 0 ), 2);
 
   // Find smaller search space of 25% of original box with centred axis
   Rect reducedBox = reduceBox(box);
@@ -381,7 +382,7 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
     }
   }
 
-  rectangle(frame, Point(reducedBox.x, reducedBox.y), Point(reducedBox.x + reducedBox.width, reducedBox.y + reducedBox.height), Scalar( 0, 255, 0 ), 2);
+  // rectangle(frame, Point(reducedBox.x, reducedBox.y), Point(reducedBox.x + reducedBox.width, reducedBox.y + reducedBox.height), Scalar( 0, 255, 0 ), 2);
 
   // imwrite("output/foundLines.jpg", frame);
 
@@ -423,7 +424,7 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
 
 }
 
-void lineDetector( Mat &frame, Mat &croppedImg, Rect box ) {
+void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box ) {
 
   Mat image = croppedImg;
 
@@ -433,7 +434,6 @@ void lineDetector( Mat &frame, Mat &croppedImg, Rect box ) {
   // equalizeHist( grayImage, grayImage );
 
   GaussianBlur(grayImage, grayImage, Size(3,3), 0, 0, BORDER_DEFAULT);
-  // GaussianBlur(grayImage, grayImage, Size(3,3), 0, 0, BORDER_DEFAULT);
 
   Mat dfdx;
   dfdx.create(image.size(), CV_64F);
@@ -466,6 +466,7 @@ void lineDetector( Mat &frame, Mat &croppedImg, Rect box ) {
   vector<lineData> lines;
   vector<lineData> filteredLines;
 
+
   convolution(grayImage, 3, 0, dxKernel, dfdx);
   convolution(grayImage, 3, 1, dyKernel, dfdy);
 
@@ -474,6 +475,26 @@ void lineDetector( Mat &frame, Mat &croppedImg, Rect box ) {
 
 	getThresholdedMag(gradientMagnitude, thresholdedMag);
 
+  imwrite("output/thresholdedMag.jpg", thresholdedMag);
+
+  Mat circleFrame = grayImage.clone();
+  // GaussianBlur( circleFrame, circleFrame, Size(9, 9), 2, 2 );
+
+  Mat kernel = (Mat_<double>(3,3) << -1,-1,-1,
+																		 -1, 9,-1,
+																		 -1,-1,-1);
+
+  filter2D(circleFrame, circleFrame, -1, kernel);
+
+  GaussianBlur(circleFrame, circleFrame, Size(3,3), 0, 0, BORDER_DEFAULT);
+
+
+  usleep(1000);
+  imwrite("output/circleFrame.jpg", circleFrame);
+
+  vector<Vec3f> circles;
+  HoughCircles( circleFrame, circles, CV_HOUGH_GRADIENT, 1, 1, 200, 60, 0, 0 );
+
 	getHoughSpace(thresholdedMag, gradientDirection, 240, image.cols, image.rows, houghSpace, rhoValues, thetaValues);
 
 	extractLines(frame, image, box, rhoValues, thetaValues, lines);
@@ -481,11 +502,21 @@ void lineDetector( Mat &frame, Mat &croppedImg, Rect box ) {
   if (lines.size() > 1)
     filteredLines = filterLines(lines, 20);
 
-  detectionDecision(frame, image, box, filteredLines);
+  detectionDecision(drawingFrame, image, box, filteredLines);
 
-  drawLines(frame, filteredLines);
+  drawLines( drawingFrame, filteredLines);
 
-  imwrite("output/foundLines.jpg", frame);
+  for( int i = 0; i < circles.size(); i++ )
+  {
+     Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+     int radius = cvRound(circles[i][2]);
+     // circle center
+     //circle( drawingFrame, center, 3, Scalar(0,255,0), -1, 8, 0 );
+     // circle outline
+     //circle( drawingFrame, center, radius, Scalar(0,0,255), 3, 8, 0 );
+   }
+
+  imwrite("output/foundLines.jpg", drawingFrame);
 
 }
 
@@ -682,15 +713,16 @@ void displayHough( Mat frame ){
 }
 
 void analyseBoxes( Mat &frame ){
-
+  Mat drawingFrame = frame.clone();
   for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
   // for (int i = 0; i < 2; i ++){
     Mat frameForCrop = frame.clone();
     Mat croppedImg;
     croppedImg = frameForCrop(detectedDartboardsVJ[i]);
+    //std::cout << croppedImg.size() << '\n';
     if (i == 1)
       imwrite("output/crop.jpg", croppedImg);
-    lineDetector(frame, croppedImg, detectedDartboardsVJ[i]);
+    dartboardDetector(frame, drawingFrame, croppedImg, detectedDartboardsVJ[i]);
   }
 }
 
@@ -702,6 +734,8 @@ int main( int argc, const char** argv ){
 	Mat frame = imread(argv[1], CV_LOAD_IMAGE_COLOR);
   Mat VJFrame = frame.clone();
   Mat houghFrame = frame.clone();
+  Mat circleFrame = frame.clone();
+  Mat grayCircleFrame;
   Mat finalOutput = frame.clone();
 
 	// 2. Load the Strong Classifier in a structure called `Cascade'
@@ -715,6 +749,27 @@ int main( int argc, const char** argv ){
 
   // 5. Save image with Viola Jones detections
   imwrite( "output/detectedVJ.jpg", VJFrame );
+
+  //////////// EXPERIMENT WITH HOUGH CIRCLES ////////////
+  // cvtColor( circleFrame, grayCircleFrame, CV_BGR2GRAY );
+  // GaussianBlur( grayCircleFrame, grayCircleFrame, Size(3, 3), 2, 2 );
+  //
+  // vector<Vec3f> circles;
+  // HoughCircles( grayCircleFrame, circles, CV_HOUGH_GRADIENT, 1, 1, 200, 100, 0, 0 );
+  //
+  // for( int i = 0; i < circles.size(); i++ )
+  // {
+  //    Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+  //    int radius = cvRound(circles[i][2]);
+  //    // circle center
+  //    circle( circleFrame, center, 3, Scalar(0,255,0), -1, 8, 0 );
+  //    // circle outline
+  //    circle( circleFrame, center, radius, Scalar(0,0,255), 3, 8, 0 );
+  //  }
+
+  //imwrite("output/circleTest.jpg", circleFrame);
+
+  //////////////////////////////////////////////////////
 
   // 6. Loop through cropped boxes to detect lines and decide if dartboard or not
   analyseBoxes( houghFrame );
