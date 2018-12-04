@@ -363,7 +363,7 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
   int boxWidthBound = reducedBox.x + reducedBox.width;
   int boxHeightBound = reducedBox.y + reducedBox.height;
 
-  if (lines.size() > 2) {
+  if (lines.size() > 4) {
     for (int i = 0; i < lines.size(); i++) {
       lineData line = lines[i];
       double midpointX = (line.point1.x + line.point2.x)/2;
@@ -703,6 +703,8 @@ int main( int argc, const char** argv ){
 
 	// ADDED: 8. Perform F1 test
 	float f1score = F1Test(detectedDartboardsVJ.size(), imgName, frame);
+
+  std::cout << detectedDartboardsFinal.size() << '\n';
 
 	// 6. Save Result Image
 	// imwrite( "output/detected.jpg", frame );
