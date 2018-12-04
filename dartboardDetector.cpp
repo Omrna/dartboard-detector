@@ -59,6 +59,8 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
 int findCircles( Mat &frame );
 
 void analyseBoxes( Mat &frame );
+std::vector<Rect> mergeDetections();
+
 
 /** Global variables */
 String cascade_name = "cascade.xml";
@@ -477,7 +479,7 @@ void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box
 
   imwrite("output/thresholdedMag.jpg", thresholdedMag);
 
-  Mat circleFrame = grayImage.clone();
+  /*Mat circleFrame = grayImage.clone();
   // GaussianBlur( circleFrame, circleFrame, Size(9, 9), 2, 2 );
 
   Mat kernel = (Mat_<double>(3,3) << -1,-1,-1,
@@ -489,11 +491,12 @@ void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box
   GaussianBlur(circleFrame, circleFrame, Size(3,3), 0, 0, BORDER_DEFAULT);
 
 
-  usleep(1000);
+  // usleep(1000);
   imwrite("output/circleFrame.jpg", circleFrame);
 
   vector<Vec3f> circles;
-  HoughCircles( circleFrame, circles, CV_HOUGH_GRADIENT, 1, 1, 200, 60, 0, 0 );
+  HoughCircles( circleFrame, circles, CV_HOUGH_GRADIENT, 1, circleFrame.rows/8, 250, 50, 0, 0 );
+  */
 
 	getHoughSpace(thresholdedMag, gradientDirection, 240, image.cols, image.rows, houghSpace, rhoValues, thetaValues);
 
@@ -506,15 +509,15 @@ void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box
 
   drawLines( drawingFrame, filteredLines);
 
-  for( int i = 0; i < circles.size(); i++ )
+  /*for( int i = 0; i < circles.size(); i++ )
   {
-     Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+     Point center(cvRound(circles[i][0] + box.x), cvRound(circles[i][1] + box.y));
      int radius = cvRound(circles[i][2]);
      // circle center
-     //circle( drawingFrame, center, 3, Scalar(0,255,0), -1, 8, 0 );
+     circle( drawingFrame, center, 3, Scalar(0,255,0), -1, 8, 0 );
      // circle outline
-     //circle( drawingFrame, center, radius, Scalar(0,0,255), 3, 8, 0 );
-   }
+     circle( drawingFrame, center, radius, Scalar(0,0,255), 3, 8, 0 );
+   }*/
 
   imwrite("output/foundLines.jpg", drawingFrame);
 
@@ -726,6 +729,38 @@ void analyseBoxes( Mat &frame ){
   }
 }
 
+std::vector<Rect> mergeDetections() {
+  std::vector<Rect> newDartboardDetections;
+  // 
+  // for (int i = 0; i < detectedDartboards.size(); i++) {
+	// 	for (int j = 0; j < trueDartboards.size(); j++) {
+	// 		// Get intersection and check matching area percentage
+	// 		Rect intersection = detectedDartboards[i] & trueDartboards[j];
+	// 		float intersectionArea = intersection.area();
+  //
+	// 		// If there is an intersection, check percentage of intersection area
+	// 		// to detection area
+	// 		if (intersectionArea > 0) {
+	// 			float matchPercentage = (intersectionArea / trueDartboards[j].area()) * 100;
+  //
+	// 			// If threshold reached, increment true positives
+	// 			if (matchPercentage > 60){
+	// 				truePositives++;
+	// 				break;
+	// 			}
+	// 			if (j == (trueDartboards.size() - 1)) falsePositives++;
+	// 		}
+	// 		// If loop reaches end without reaching intersection threshold, it is
+	// 		// a false negative
+	// 		else {
+	// 			if (j == (trueDartboards.size() - 1)) falsePositives++;
+	// 		}
+	// 	}
+  // }
+
+  return newDartboardDetections;
+}
+
 int main( int argc, const char** argv ){
 
 	const char* imgName = argv[1];
@@ -750,6 +785,7 @@ int main( int argc, const char** argv ){
   // 5. Save image with Viola Jones detections
   imwrite( "output/detectedVJ.jpg", VJFrame );
 
+  /*
   //////////// EXPERIMENT WITH HOUGH CIRCLES ////////////
   // cvtColor( circleFrame, grayCircleFrame, CV_BGR2GRAY );
   // GaussianBlur( grayCircleFrame, grayCircleFrame, Size(3, 3), 2, 2 );
@@ -770,9 +806,13 @@ int main( int argc, const char** argv ){
   //imwrite("output/circleTest.jpg", circleFrame);
 
   //////////////////////////////////////////////////////
+  */
 
   // 6. Loop through cropped boxes to detect lines and decide if dartboard or not
   analyseBoxes( houghFrame );
+
+  // 7. Merge overlapping true positives into one
+  //detectedDartboardsFinal = mergeDetections();
 
   // 7. Show and save Viola Jones boundaries on line detections
   if (detectedDartboardsFinal.size() > 0)
