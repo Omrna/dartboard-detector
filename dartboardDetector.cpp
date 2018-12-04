@@ -25,9 +25,15 @@ using namespace cv;
 /** Initialise Classes **/
 class lineData {
   public:
-    double m, c;
+    double m, c, theta, rho;
     Point point1, point2;
-    lineData(double m, double c, Point point1, Point point2) : m(m), c(c), point1(point1), point2(point2) {}
+    bool operator< (const lineData &other) const {
+        return theta < other.theta;
+    }
+    lineData(double m, double c, double theta, double rho,
+             Point point1, Point point2)
+             : m(m), c(c), theta(theta), rho(rho), point1(point1),
+             point2(point2) {}
 };
 
 /** Function Headers */
@@ -43,8 +49,11 @@ void getThresholdedMag(	Mat &input,	Mat &output );
 void getHoughSpace(	Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width,	int height,	Mat &output,
                     std::vector<double> &rhoValues, std::vector<double> &thetaValues);
 void extractLines( Mat &frame, Mat &croppedImg, std::vector<double> &rhoValues, std::vector<double> &thetaValues, vector<lineData> &lines );
-void lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle );
-void detectionDecision( Mat &image, Rect rectangle, vector<lineData> &lines);
+void drawLines( Mat &frame, vector<lineData> &lines );
+vector<lineData> filterLines( vector<lineData> &lines, int tolerance );
+void lineDetector( Mat &frame, Mat &croppedImg, Rect box );
+Rect reduceBox( Rect box );
+void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> &lines);
 int findCircles( Mat &frame );
 
 void analyseBoxes( Mat &frame );
@@ -56,7 +65,6 @@ CascadeClassifier cascade;
 std::vector<Rect> detectedDartboardsVJ;
 std::vector<Rect> detectedDartboardsFinal;
 std::vector<Rect> trueDartboards;
-//std::vector<line> v;
 
 /* Functions */
 
@@ -254,7 +262,7 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 	imwrite("output/houghSpace.jpg", houghSpace);
 }
 
-void extractLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<double> &rhoValues, std::vector<double> &thetaValues, vector<lineData> &lines ){
+void extractLines( Mat &frame, Mat &croppedImg, Rect box, std::vector<double> &rhoValues, std::vector<double> &thetaValues, vector<lineData> &lines ){
 
   int frameWidth = frame.cols;
   int frameHeight = frame.rows;
@@ -263,12 +271,6 @@ void extractLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<doub
   int cropHeight = croppedImg.rows;
 
   Mat image = frame;
-
-  // if (rectangle == detectedDartboardsVJ[2]){
-  //   for (int i = 0; i < thetaValues.size(); i++) {
-  //     std::cout << thetaValues[i] << '\n';
-  //   }
-  // }
 
 	for (int i = 0; i < rhoValues.size(); i++) {
 
@@ -284,32 +286,113 @@ void extractLines( Mat &frame, Mat &croppedImg, Rect rectangle, std::vector<doub
       m = cos(radians) / sin(radians);
       c = (rho - cropWidth - cropHeight)/sin(radians);
 
-      // When x = rectangle.x and y = rectangle.y + height
-      point1.x = cvRound(rectangle.x);
-      point1.y = cvRound(rectangle.y) + cvRound(c);
+      // When x = box.x and y = box.y + height
+      point1.x = cvRound(box.x);
+      point1.y = cvRound(box.y) + cvRound(c);
       // When x = end of image
-      point2.x = cvRound(rectangle.x + rectangle.width);
-      point2.y = cvRound(rectangle.y) + cvRound(c - (rectangle.width * m));
+      point2.x = cvRound(box.x + box.width);
+      point2.y = cvRound(box.y) + cvRound(c - (box.width * m));
 
-      clipLine(rectangle, point1, point2);
+      clipLine(box, point1, point2);
 
-      lineData currentLine (m, c, point1, point2);
+      lineData currentLine (m, c, thetaValues[i], rhoValues[i], point1, point2);
 
       lines.push_back(currentLine);
-
-  		line(image, point1, point2,  Scalar( 0, 0, 255 ), 1);
     }
 	}
-  // std::cout << lines[1] << '\n';
-
-	// imwrite("output/foundLines.jpg", image);
 }
 
-void detectionDecision( Mat &image, Rect rectangle, vector<lineData> &lines) {
-  int i = 0;
+vector<lineData> filterLines( vector<lineData> &lines, int tolerance ) {
+  vector<lineData> filteredLines;
+
+  // Sort lines by theta
+  std::sort(lines.begin(), lines.end());
+
+  // Initialise filteredLines with first line
+  filteredLines.push_back(lines[0]);
+  int compareTo = 0;
+
+  for (int i = 1; i < lines.size(); i++) {
+    double previousLineTheta = lines[compareTo].theta;
+    double currentLineTheta = lines[i].theta;
+    double thetaDiff = currentLineTheta - previousLineTheta;
+    // Check if current theta is greater than tolerance since last line theta
+    if (thetaDiff > tolerance ) {
+      filteredLines.push_back(lines[i]);
+      compareTo = i;
+    }
+  }
+
+  return filteredLines;
 }
 
-void lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle ) {
+void drawLines( Mat &frame, vector<lineData> &lines ) {
+  for (int i = 0; i < lines.size(); i++) {
+    Point point1 = lines[i].point1;
+    Point point2 = lines[i].point2;
+    line(frame, point1, point2,  Scalar( 255, 0, 0 ), 1);
+  }
+}
+
+Rect reduceBox( Rect box ){
+
+  double originalArea = box.width * box.height;
+  double halfArea = originalArea/4;
+  double newLength = cvRound(sqrt(halfArea));
+
+  double centreX = box.x + (box.width/2);
+  double centreY = box.y + (box.height/2);
+
+  double newCentreX = cvRound(centreX - (newLength/2));
+  double newCentreY = cvRound(centreY - (newLength/2));
+
+  Rect newBox(newCentreX, newCentreY, newLength, newLength);
+
+  return newBox;
+}
+
+void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> &lines) {
+
+  // Find smaller search space of 25% of original box with centred axis
+  Rect reducedBox = reduceBox(box);
+
+  rectangle(frame, Point(reducedBox.x, reducedBox.y), Point(reducedBox.x + reducedBox.width, reducedBox.y + reducedBox.height), Scalar( 0, 255, 0 ), 2);
+
+  // Create a voting matrix where the pixel is incremented if there is an
+  // intersection between two different lines at that point
+  Mat voting(reducedBox.height, reducedBox.width, CV_64F);
+
+  int boxWidthBound = reducedBox.x + reducedBox.width;
+  int boxHeightBound = reducedBox.y + reducedBox.height;
+
+  // Voting
+  for (int x = reducedBox.x; x < boxWidthBound; x++) {
+    for (int y = reducedBox.y; y < boxHeightBound; y++) {
+      for (int i = 0; i < lines.size(); i++) {
+        for (int j = 1; j < lines.size(); j++) {
+          // Don't compare line to itself or with one it has already been
+          // compared with
+          if (j <= i) continue;
+
+
+          lineData line1 = lines[i];
+          lineData line2 = lines[j];
+
+          double y1 = (line1.m * x) + line1.c;
+          double y2 = (line2.m * x) + line2.c;
+
+          // std::cout << "y1: " << y1 << " and y2: " << y2 << '\n';
+
+          if (cvRound(y1) == cvRound(y2)) {
+            voting.at<double>( y - reducedBox.y , x -reducedBox.x )++;
+          }
+        }
+      }
+    }
+  }
+}
+
+void lineDetector( Mat &frame, Mat &croppedImg, Rect box ) {
 
   Mat image = croppedImg;
 
@@ -350,6 +433,7 @@ void lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle ) {
   std::vector<double> thetaValues;
 
   vector<lineData> lines;
+  vector<lineData> filteredLines;
 
   convolution(grayImage, 3, 0, dxKernel, dfdx);
   convolution(grayImage, 3, 1, dyKernel, dfdy);
@@ -361,9 +445,14 @@ void lineDetector( Mat &frame, Mat &croppedImg, Rect rectangle ) {
 
 	getHoughSpace(thresholdedMag, gradientDirection, 240, image.cols, image.rows, houghSpace, rhoValues, thetaValues);
 
-	extractLines(frame, image, rectangle, rhoValues, thetaValues, lines);
+	extractLines(frame, image, box, rhoValues, thetaValues, lines);
 
-  detectionDecision(image, rectangle, lines);
+  if (lines.size() > 1) filteredLines = filterLines(lines, 10);
+
+  detectionDecision(frame, image, box, filteredLines);
+
+  drawLines(frame, filteredLines);
+
 }
 
 int findCircles( Mat &frame ) {
@@ -417,43 +506,6 @@ int findCircles( Mat &frame ) {
   return 0;
 }
 
-int main( int argc, const char** argv ){
-
-	const char* imgName = argv[1];
-
-  // 1. Read Input Image
-	Mat frame = imread(argv[1], CV_LOAD_IMAGE_COLOR);
-  Mat VJOutput = frame.clone();
-
-	// 2. Load the Strong Classifier in a structure called `Cascade'
-	if( !cascade.load( cascade_name ) ){ printf("--(!)Error loading\n"); return -1; };
-
-	// 3. Detect Faces with Viola Jones
-	detectVJ( frame );
-
-  // 4. Draw Viola Jones boxes
-  displayVJ( VJOutput );
-
-  // 5. Save image with Viola Jones detections
-  imwrite( "output/detectedVJ.jpg", VJOutput );
-
-  // 6. Loop through cropped boxes to detect lines
-  analyseBoxes( frame );
-
-  // 7. Show and save Viola Jones boundaries on line detections
-  displayVJ( frame );
-  imwrite("output/foundLines.jpg", frame);
-
-
-	// ADDED: 8. Perform F1 test
-	float f1score = F1Test(detectedDartboardsVJ.size(), imgName, frame);
-
-	// 6. Save Result Image
-	// imwrite( "output/detected.jpg", frame );
-
-	return 0;
-}
-
 float F1Test( int facesDetected, const char* imgName, Mat frame ){
 	int validFaces = 0;
 
@@ -480,7 +532,7 @@ float F1Test( int facesDetected, const char* imgName, Mat frame ){
 	// Go through CSV file line by line
 	while(getline(inputFile, current_line)){
 
-		// Array of values for each rectangle
+		// Array of values for each box
 		std::vector<int> values;
 
 		std::stringstream convertor(current_line);
@@ -568,11 +620,46 @@ void displayVJ( Mat frame ){
 void analyseBoxes( Mat &frame ){
   Mat frameForCrop = frame.clone();
   Mat croppedImg;
-  int linesFound = 0;
 
   for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
     croppedImg = frameForCrop(detectedDartboardsVJ[i]);
     lineDetector(frame, croppedImg, detectedDartboardsVJ[i]);
   }
+}
 
+int main( int argc, const char** argv ){
+
+	const char* imgName = argv[1];
+
+  // 1. Read Input Image
+	Mat frame = imread(argv[1], CV_LOAD_IMAGE_COLOR);
+  Mat VJOutput = frame.clone();
+
+	// 2. Load the Strong Classifier in a structure called `Cascade'
+	if( !cascade.load( cascade_name ) ){ printf("--(!)Error loading\n"); return -1; };
+
+	// 3. Detect Faces with Viola Jones
+	detectVJ( frame );
+
+  // 4. Draw Viola Jones boxes
+  displayVJ( VJOutput );
+
+  // 5. Save image with Viola Jones detections
+  imwrite( "output/detectedVJ.jpg", VJOutput );
+
+  // 6. Loop through cropped boxes to detect lines and decide if dartboard or not
+  analyseBoxes( frame );
+
+  // 7. Show and save Viola Jones boundaries on line detections
+  // displayVJ( frame );
+  imwrite("output/foundLines.jpg", frame);
+
+
+	// ADDED: 8. Perform F1 test
+	float f1score = F1Test(detectedDartboardsVJ.size(), imgName, frame);
+
+	// 6. Save Result Image
+	// imwrite( "output/detected.jpg", frame );
+
+	return 0;
 }
