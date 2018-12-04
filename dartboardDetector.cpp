@@ -204,9 +204,6 @@ void getHoughSpace( Mat &thresholdedMag, Mat &gradientDirection, int threshold, 
 	int angleRange = 1;
 
 	// houghSpace.create(round(maxDist), 180, CV_64F);
-  //imwrite("output/threshMagTest.jpg", thresholdedMag);
-  for (int i= 0; i< thetaValues.size(); i++)
-    std::cout << thetaValues[i] << '\n';
 
 	houghSpace.create(2*(width + height), 360, CV_64F);
 
@@ -558,7 +555,13 @@ float F1Test( int facesDetected, const char* imgName, Mat frame ){
   }
 
 	const char *c = imgNameString.c_str();
-	ifstream inputFile(c);
+  string prePath = "CSVs/dartboards/";
+  string name = imgNameString.c_str();
+  string newName = prePath + name;
+  std::cout << newName << '\n';
+
+  ifstream inputFile;
+  inputFile.open(newName.c_str());
 
 	// Break if no CSV file found
 	if (inputFile.peek() == std::ifstream::traits_type::eof()) {
