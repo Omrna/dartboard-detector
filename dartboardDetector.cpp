@@ -40,7 +40,7 @@ class lineData {
 void detectVJ( Mat frame );
 void displayVJ( Mat frame );
 void displayHough( Mat frame );
-float F1Test( int facesDetected, const char* imgName, Mat frame );
+float F1Test( int facesDetected, const char* imgName, Mat frame, int detectorChoice );
 void removeOverlaps();
 
 void convolution(	Mat &input,	int size,	int direction,	Mat kernel,	Mat &output );
@@ -540,8 +540,9 @@ int findCircles( Mat &frame ) {
   return 0;
 }
 
-float F1Test( int facesDetected, const char* imgName, Mat frame ){
+float F1Test( int facesDetected, const char* imgName, Mat frame, int detectorChoice ){
 	int validFaces = 0;
+  std::vector<Rect> trueDartboards;
 
 	// Manipulate string to get correct CSV file name
 	string fileExtension = "points.csv";
@@ -558,7 +559,6 @@ float F1Test( int facesDetected, const char* imgName, Mat frame ){
   string prePath = "CSVs/dartboards/";
   string name = imgNameString.c_str();
   string newName = prePath + name;
-  std::cout << newName << '\n';
 
   ifstream inputFile;
   inputFile.open(newName.c_str());
@@ -587,14 +587,19 @@ float F1Test( int facesDetected, const char* imgName, Mat frame ){
 		trueDartboards.push_back(Rect(values[0], values[1], values[2], values[3]));
 	}
 
-	int truePositives = 0;
+  std::vector<Rect> detectedDartboards;
+
+  if (detectorChoice == 0) detectedDartboards = detectedDartboardsVJ;
+  else                     detectedDartboards = detectedDartboardsFinal;
+
+  int truePositives = 0;
 	int falsePositives = 0;
 
 	// Compare each detected face to every ground truth face
-	for (int i = 0; i < detectedDartboardsVJ.size(); i++) {
+	for (int i = 0; i < detectedDartboards.size(); i++) {
 		for (int j = 0; j < trueDartboards.size(); j++) {
 			// Get intersection and check matching area percentage
-			Rect intersection = detectedDartboardsVJ[i] & trueDartboards[j];
+			Rect intersection = detectedDartboards[i] & trueDartboards[j];
 			float intersectionArea = intersection.area();
 
 			// If there is an intersection, check percentage of intersection area
@@ -617,7 +622,15 @@ float F1Test( int facesDetected, const char* imgName, Mat frame ){
 		}
 	}
 
-	std::cout << "true positives: " << truePositives << ", false positives: " << falsePositives << "\n";
+  if (detectorChoice == 0) std::cout << "############ VIOLA JONES RESULTS ############" << '\n';
+  else                     std::cout << "########### FINAL DETECTOR RESULTS ###########" << '\n';
+
+  if (detectorChoice == 0)
+    std::cout << "Dartboards detected with Viola Jones: " << detectedDartboardsVJ.size() << std::endl;
+  else
+    std::cout << "Dartboards detected with Hough: " <<detectedDartboardsFinal.size() << '\n';
+
+	std::cout << "True Dartboards: " << trueDartboards.size() << ", True Positives: " << truePositives << ", False Positives: " << falsePositives << "\n";
 
 	// Time for F1 test
 	// Precision = TP / (TP + FP)
@@ -627,9 +640,15 @@ float F1Test( int facesDetected, const char* imgName, Mat frame ){
 	float precision = (float)truePositives / ((float)truePositives + (float)falsePositives);
 	float recall = (float)truePositives / (float)trueDartboards.size();
 
+  if (isnan(precision)) precision = 0;
+
+  std::cout << "Precision: " << precision << " and Recall: " << recall << '\n';
+
 	float f1 = 2 * ((precision * recall)/(precision + recall));
 
-	std::cout << "f1 score: " << f1 << "\n";
+  if (isnan(f1)) f1 = 0;
+
+	std::cout << "F1 score: " << f1 << "\n";
 
 	return f1;
 }
@@ -643,9 +662,6 @@ void detectVJ( Mat frame ){
 
 	// 2. Perform Viola-Jones Object Detection
 	cascade.detectMultiScale( frame_gray, detectedDartboardsVJ, 1.1, 1, 0|CV_HAAR_SCALE_IMAGE, Size(50, 50), Size(500,500) );
-
-  // 3. Print number of Faces found
-	std::cout << "dartboards detected with Viola Jones: " << detectedDartboardsVJ.size() << std::endl;
 
 }
 
@@ -710,9 +726,9 @@ int main( int argc, const char** argv ){
   imwrite("output/detected.jpg", finalOutput);
 
 	// ADDED: 8. Perform F1 test
-	float f1score = F1Test(detectedDartboardsVJ.size(), imgName, frame);
+	float f1ScoreVJ = F1Test(detectedDartboardsVJ.size(), imgName, frame, 0);
 
-  std::cout << "dartboards detected with Hough: " <<detectedDartboardsFinal.size() << '\n';
+  float f1ScoreFinal = F1Test(detectedDartboardsFinal.size(), imgName, frame, 1);
 
 	// 6. Save Result Image
 	// imwrite( "output/detected.jpg", frame );
