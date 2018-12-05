@@ -51,12 +51,12 @@ void getThresholdedMag(	Mat &input,	Mat &output );
 void getHoughSpace(	Mat &thresholdedMag, Mat &gradientDirection, int threshold, int width,	int height,	Mat &output,
                     std::vector<double> &rhoValues, std::vector<double> &thetaValues);
 void extractLines( Mat &frame, Mat &croppedImg, std::vector<double> &rhoValues, std::vector<double> &thetaValues, vector<lineData> &lines );
+vector<Vec3f> extractCircles( Mat &frame );
 void drawLines( Mat &frame, vector<lineData> &lines );
 vector<lineData> filterLines( vector<lineData> &lines, int tolerance );
 void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box );
 Rect reduceBox( Rect box );
-void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> &lines);
-int findCircles( Mat &frame );
+void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> &lines, vector<Vec3f> &circles);
 
 void analyseBoxes( Mat &frame );
 std::vector<Rect> mergeDetections();
@@ -303,6 +303,21 @@ void extractLines( Mat &frame, Mat &croppedImg, Rect box, std::vector<double> &r
 	}
 }
 
+vector<Vec3f> extractCircles( Mat &frame ) {
+
+  vector<Vec3f> circles;
+
+  Mat kernel = (Mat_<double>(3,3) << -1,-1,-1,
+																		 -1, 9,-1,
+																		 -1,-1,-1);
+
+  filter2D(frame, frame, -1, kernel);
+  GaussianBlur(frame, frame, Size(3,3), 0, 0, BORDER_DEFAULT);
+  HoughCircles( frame, circles, CV_HOUGH_GRADIENT, 1, frame.rows/4, 250, 50, 0, 0 );
+
+  return circles;
+}
+
 vector<lineData> filterLines( vector<lineData> &lines, int tolerance ) {
   vector<lineData> filteredLines;
 
@@ -352,7 +367,7 @@ Rect reduceBox( Rect box ){
   return newBox;
 }
 
-void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> &lines) {
+void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> &lines, vector<Vec3f> &circles) {
 
   rectangle(frame, Point(box.x, box.y), Point(box.x + box.width, box.y + box.height), Scalar( 0, 255, 0 ), 2);
 
@@ -360,11 +375,13 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
   Rect reducedBox = reduceBox(box);
   vector<Point> midpoints;
   int midpointCounter = 0;
+  int circleCounter = 0;
 
   int boxWidthBound = reducedBox.x + reducedBox.width;
   int boxHeightBound = reducedBox.y + reducedBox.height;
 
-  if (lines.size() > 4) {
+  // Check how many midpoints of lines are in smaller box
+  if (lines.size() > 3) {
     for (int i = 0; i < lines.size(); i++) {
       lineData line = lines[i];
       double midpointX = (line.point1.x + line.point2.x)/2;
@@ -376,54 +393,35 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
       if (xInBox && yInBox) midpointCounter++;
     }
 
-    // std::cout << "lines: " << lines.size() << '\n';
-    //
-    // std::cout << "midpoints: " << midpointCounter << '\n';
-    if (midpointCounter > 4) {
-      detectedDartboardsFinal.push_back(box);
+    // bool circleInBox;
+
+    // if (midpointCounter > 3) {
+    //   detectedDartboardsFinal.push_back(box);
+    // }
+  }
+
+  // Check how many circle centres fall in smaller box
+  if (circles.size() > 0) {
+    for (int i = 0; i < circles.size(); i++) {
+      Vec3f circle = circles[i];
+
+      double circleCentreX = circle[0];
+      double circleCentreY = circle[1];
+
+      bool xInBox = circleCentreX >= reducedBox.x && circleCentreX <= boxWidthBound;
+      bool yInBox = circleCentreY >= reducedBox.y && circleCentreY <= boxHeightBound;
+
+      if (xInBox && yInBox) circleCounter++;
     }
   }
 
-  // rectangle(frame, Point(reducedBox.x, reducedBox.y), Point(reducedBox.x + reducedBox.width, reducedBox.y + reducedBox.height), Scalar( 0, 255, 0 ), 2);
 
-  // imwrite("output/foundLines.jpg", frame);
-
-  /* Voting
-  // Create a voting matrix where the pixel is incremented if there is an
-  // intersection between two different lines at that point
-  // Mat voting(reducedBox.height, reducedBox.width, CV_64F);
-  for (int x = reducedBox.x; x < boxWidthBound; x++) {
-    for (int y = reducedBox.y; y < boxHeightBound; y++) {
-      for (int i = 0; i < lines.size(); i++) {
-        for (int j = 1; j < lines.size(); j++) {
-          // Don't compare line to itself or with one it has already been
-          // compared with
-          if (j <= i) continue;
-
-
-          lineData line1 = lines[i];
-          lineData line2 = lines[j];
-
-          // double y1 = cvRound((line1.m * x) + line1.c);
-          // double y2 = cvRound((line2.m * x) + line2.c);
-
-          double y1 = ((line1.m * x) + line1.c);
-          double y2 = ((line2.m * x) + line2.c);
-
-          if (i == 0 && j == 1)
-          std::cout << "y1: " << y1 << " and y2: " << y2 << '\n';
-
-          //if (y1 >= y2 - 1 && y1 <= y2 + 1) {
-          if (y1 == y2){
-            std::cout << "true" << '\n';
-            voting.at<double>( y - reducedBox.y , x -reducedBox.x )++;
-          }
-        }
-      }
-    }
-  }*/
-
-
+  if (midpointCounter > 3) {
+    detectedDartboardsFinal.push_back(box);
+  }
+  else if (midpointCounter <= 3 && circleCounter > 0) {
+    detectedDartboardsFinal.push_back(box);
+  }
 }
 
 void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box ) {
@@ -462,12 +460,15 @@ void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box
 
 	Mat houghSpace;
 
+  Mat circleFrame = grayImage.clone();
+
   std::vector<double> rhoValues;
   std::vector<double> thetaValues;
 
   vector<lineData> lines;
   vector<lineData> filteredLines;
 
+  vector<Vec3f> circles;
 
   convolution(grayImage, 3, 0, dxKernel, dfdx);
   convolution(grayImage, 3, 1, dyKernel, dfdy);
@@ -479,37 +480,20 @@ void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box
 
   imwrite("output/thresholdedMag.jpg", thresholdedMag);
 
-  /*Mat circleFrame = grayImage.clone();
-  // GaussianBlur( circleFrame, circleFrame, Size(9, 9), 2, 2 );
-
-  Mat kernel = (Mat_<double>(3,3) << -1,-1,-1,
-																		 -1, 9,-1,
-																		 -1,-1,-1);
-
-  filter2D(circleFrame, circleFrame, -1, kernel);
-
-  GaussianBlur(circleFrame, circleFrame, Size(3,3), 0, 0, BORDER_DEFAULT);
-
-
-  // usleep(1000);
-  imwrite("output/circleFrame.jpg", circleFrame);
-
-  vector<Vec3f> circles;
-  HoughCircles( circleFrame, circles, CV_HOUGH_GRADIENT, 1, circleFrame.rows/8, 250, 50, 0, 0 );
-  */
-
 	getHoughSpace(thresholdedMag, gradientDirection, 240, image.cols, image.rows, houghSpace, rhoValues, thetaValues);
+
+  circles = extractCircles( circleFrame );
 
 	extractLines(frame, image, box, rhoValues, thetaValues, lines);
 
   if (lines.size() > 1)
     filteredLines = filterLines(lines, 20);
 
-  detectionDecision(drawingFrame, image, box, filteredLines);
+  detectionDecision(drawingFrame, image, box, filteredLines, circles);
 
   drawLines( drawingFrame, filteredLines);
 
-  /*for( int i = 0; i < circles.size(); i++ )
+  for( int i = 0; i < circles.size(); i++ )
   {
      Point center(cvRound(circles[i][0] + box.x), cvRound(circles[i][1] + box.y));
      int radius = cvRound(circles[i][2]);
@@ -517,61 +501,10 @@ void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box
      circle( drawingFrame, center, 3, Scalar(0,255,0), -1, 8, 0 );
      // circle outline
      circle( drawingFrame, center, radius, Scalar(0,0,255), 3, 8, 0 );
-   }*/
+   }
 
   imwrite("output/foundLines.jpg", drawingFrame);
 
-}
-
-int findCircles( Mat &frame ) {
-
-  Mat image = frame;
-  Mat grayImage;
-
-  cvtColor( image, grayImage, CV_BGR2GRAY );
-  equalizeHist( grayImage, grayImage );
-
-  GaussianBlur(grayImage, grayImage, Size(3,3), 0, 0, BORDER_DEFAULT);
-
-  Mat dfdx;
-  dfdx.create(grayImage.size(), CV_64F);
-
-  Mat dfdy;
-  dfdy.create(grayImage.size(), CV_64F);
-
-	Mat dxKernel = (Mat_<double>(3,3) << -1, 0, 1,
-																			 -2, 0, 2,
-																			 -1, 0, 1);
-
-  Mat dyKernel = (Mat_<double>(3,3) << -1,-2,-1,
-																		    0, 0, 0,
-																		    1, 2, 1);
-
-  Mat gradientMagnitude;
-  gradientMagnitude.create(grayImage.size(), CV_64F);
-
-  Mat gradientDirection;
-	gradientDirection.create(grayImage.size(), CV_64F);
-
-	Mat thresholdedMag;
-	thresholdedMag.create(grayImage.size(), CV_64F);
-
-	Mat houghSpace;
-
-	// Mat foundLines = image;
-
-  std::vector<double> rhoValues;
-  std::vector<double> thetaValues;
-
-  convolution(grayImage, 3, 0, dxKernel, dfdx);
-  convolution(grayImage, 3, 1, dyKernel, dfdy);
-
-	getMagnitude(dfdx, dfdy, gradientMagnitude);
-	getDirection(dfdx, dfdy, gradientDirection);
-
-	getThresholdedMag(gradientMagnitude, thresholdedMag);
-
-  return 0;
 }
 
 float F1Test( int facesDetected, const char* imgName, Mat frame, int detectorChoice ){
@@ -717,47 +650,74 @@ void displayHough( Mat frame ){
 
 void analyseBoxes( Mat &frame ){
   Mat drawingFrame = frame.clone();
+
   for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
-  // for (int i = 0; i < 2; i ++){
     Mat frameForCrop = frame.clone();
     Mat croppedImg;
     croppedImg = frameForCrop(detectedDartboardsVJ[i]);
-    //std::cout << croppedImg.size() << '\n';
-    if (i == 1)
-      imwrite("output/crop.jpg", croppedImg);
     dartboardDetector(frame, drawingFrame, croppedImg, detectedDartboardsVJ[i]);
   }
 }
 
 std::vector<Rect> mergeDetections() {
   std::vector<Rect> newDartboardDetections;
-  // 
-  // for (int i = 0; i < detectedDartboards.size(); i++) {
-	// 	for (int j = 0; j < trueDartboards.size(); j++) {
-	// 		// Get intersection and check matching area percentage
-	// 		Rect intersection = detectedDartboards[i] & trueDartboards[j];
-	// 		float intersectionArea = intersection.area();
-  //
-	// 		// If there is an intersection, check percentage of intersection area
-	// 		// to detection area
-	// 		if (intersectionArea > 0) {
-	// 			float matchPercentage = (intersectionArea / trueDartboards[j].area()) * 100;
-  //
-	// 			// If threshold reached, increment true positives
-	// 			if (matchPercentage > 60){
-	// 				truePositives++;
-	// 				break;
-	// 			}
-	// 			if (j == (trueDartboards.size() - 1)) falsePositives++;
-	// 		}
-	// 		// If loop reaches end without reaching intersection threshold, it is
-	// 		// a false negative
-	// 		else {
-	// 			if (j == (trueDartboards.size() - 1)) falsePositives++;
-	// 		}
-	// 	}
-  // }
+  std::vector<int> checked;
 
+  for (int i = 0; i < detectedDartboardsVJ.size(); i++) {
+		for (int j = 1; j < detectedDartboardsVJ.size(); j++) {
+      if(std::find(checked.begin(), checked.end(), j) != checked.end()) continue;
+      if(std::find(checked.begin(), checked.end(), i) != checked.end()) break;
+
+      if (i == detectedDartboardsVJ.size() - 1)
+        newDartboardDetections.push_back(detectedDartboardsVJ[i]);
+
+      if (j <= i) continue;
+
+      Rect box1 = detectedDartboardsVJ[i];
+      Rect box2 = detectedDartboardsVJ[j];
+
+			// Get intersection and check matching area percentage
+			Rect intersection = detectedDartboardsVJ[i] & detectedDartboardsVJ[j];
+			float intersectionArea = intersection.area();
+
+			// If there is an intersection, check percentage of intersection area
+			if (intersectionArea > 0) {
+				float matchPercentage = (intersectionArea / detectedDartboardsVJ[i].area()) * 100;
+
+        std::cout << matchPercentage << '\n';
+
+        int newX = cvRound((box1.y + box2.y) / 2);
+        int newY = cvRound((box1.y + box2.y) / 2);
+        int newWidth = cvRound((box1.width + box2.width) / 2);
+        int newHeight = cvRound((box1.height + box2.height) / 2);
+
+				// If threshold reached, merge rectangles by getting average of points
+				if (matchPercentage > 60){
+
+          Rect newBox(newX, newY, box2.width, box2.height);
+
+          newDartboardDetections.push_back(newBox);
+          checked.push_back(i);
+          checked.push_back(j);
+          break;
+				}
+        if (j == (detectedDartboardsVJ.size() - 1)){
+          newDartboardDetections.push_back(box1);
+          checked.push_back(i);
+        }
+			}
+			// If loop reaches end without reaching intersection threshold, it is
+			// a false negative
+			else {
+				if (j == (detectedDartboardsVJ.size() - 1)){
+          newDartboardDetections.push_back(box1);
+          checked.push_back(i);
+        }
+			}
+		}
+  }
+
+  std::cout << newDartboardDetections.size() << '\n';
   return newDartboardDetections;
 }
 
@@ -812,7 +772,8 @@ int main( int argc, const char** argv ){
   analyseBoxes( houghFrame );
 
   // 7. Merge overlapping true positives into one
-  //detectedDartboardsFinal = mergeDetections();
+  // if (detectedDartboardsVJ.size() > 1)
+  //   detectedDartboardsVJ = mergeDetections();
 
   // 7. Show and save Viola Jones boundaries on line detections
   if (detectedDartboardsFinal.size() > 0)
