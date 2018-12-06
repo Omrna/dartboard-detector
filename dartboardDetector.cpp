@@ -69,6 +69,7 @@ CascadeClassifier cascade;
 std::vector<Rect> detectedDartboardsVJ;
 std::vector<Rect> detectedDartboardsFinal;
 std::vector<Rect> trueDartboards;
+vector<Vec3f> allCircles;
 
 /* Functions */
 
@@ -315,6 +316,11 @@ vector<Vec3f> extractCircles( Mat &frame ) {
   GaussianBlur(frame, frame, Size(3,3), 0, 0, BORDER_DEFAULT);
   HoughCircles( frame, circles, CV_HOUGH_GRADIENT, 1, frame.rows/4, 250, 50, 0, 0 );
 
+  for (int i = 0; i < circles.size(); i++) {
+    Vec3f circle = circles[i];
+    allCircles.push_back(circle);
+  }
+
   return circles;
 }
 
@@ -381,7 +387,7 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
   int boxHeightBound = reducedBox.y + reducedBox.height;
 
   // Check how many midpoints of lines are in smaller box
-  if (lines.size() > 3) {
+  if (lines.size() > 1) {
     for (int i = 0; i < lines.size(); i++) {
       lineData line = lines[i];
       double midpointX = (line.point1.x + line.point2.x)/2;
@@ -405,23 +411,33 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
     for (int i = 0; i < circles.size(); i++) {
       Vec3f circle = circles[i];
 
-      double circleCentreX = circle[0];
-      double circleCentreY = circle[1];
+      double circleCentreX = circle[0] + box.x;
+      double circleCentreY = circle[1] + box.y;
+
+      std::cout << circleCentreX << '\n';
 
       bool xInBox = circleCentreX >= reducedBox.x && circleCentreX <= boxWidthBound;
       bool yInBox = circleCentreY >= reducedBox.y && circleCentreY <= boxHeightBound;
 
-      if (xInBox && yInBox) circleCounter++;
+
+      if (xInBox && yInBox){
+        circleCounter++;
+      }
     }
   }
 
+  // Check simply for a few lines to validate with when using circles
 
-  if (midpointCounter > 3) {
+  if (midpointCounter > 4) {
     detectedDartboardsFinal.push_back(box);
   }
-  else if (midpointCounter <= 3 && circleCounter > 0) {
-    detectedDartboardsFinal.push_back(box);
+  else {
+    if (circleCounter > 0)
+      detectedDartboardsFinal.push_back(box);
   }
+
+  rectangle(frame, Point(reducedBox.x, reducedBox.y), Point(reducedBox.x + reducedBox.width, reducedBox.y + reducedBox.height), Scalar( 0, 255, 0 ), 2);
+
 }
 
 void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box ) {
@@ -500,7 +516,7 @@ void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box
      // circle center
      circle( drawingFrame, center, 3, Scalar(0,255,0), -1, 8, 0 );
      // circle outline
-     circle( drawingFrame, center, radius, Scalar(0,0,255), 3, 8, 0 );
+     circle( drawingFrame, center, radius, Scalar(0,0,255), 2, 8, 0 );
    }
 
   imwrite("output/foundLines.jpg", drawingFrame);
@@ -649,12 +665,22 @@ void displayHough( Mat frame ){
 }
 
 void analyseBoxes( Mat &frame ){
+
+  // Find all circles in each cropped image
+  // for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
+  //   Mat frameForCrop = frame.clone();
+  //   Mat croppedImg = frameForCrop(detectedDartboardsVJ[i]);
+  //   cvtColor( croppedImg, croppedImg, CV_BGR2GRAY );
+  //   extractCircles(croppedImg);
+  // }
+
+  // Frame passed around to draw found lines, boxes and circles on
   Mat drawingFrame = frame.clone();
 
+  // Decide whether there is dartboard in each cropped image
   for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
     Mat frameForCrop = frame.clone();
-    Mat croppedImg;
-    croppedImg = frameForCrop(detectedDartboardsVJ[i]);
+    Mat croppedImg = frameForCrop(detectedDartboardsVJ[i]);
     dartboardDetector(frame, drawingFrame, croppedImg, detectedDartboardsVJ[i]);
   }
 }
@@ -744,29 +770,6 @@ int main( int argc, const char** argv ){
 
   // 5. Save image with Viola Jones detections
   imwrite( "output/detectedVJ.jpg", VJFrame );
-
-  /*
-  //////////// EXPERIMENT WITH HOUGH CIRCLES ////////////
-  // cvtColor( circleFrame, grayCircleFrame, CV_BGR2GRAY );
-  // GaussianBlur( grayCircleFrame, grayCircleFrame, Size(3, 3), 2, 2 );
-  //
-  // vector<Vec3f> circles;
-  // HoughCircles( grayCircleFrame, circles, CV_HOUGH_GRADIENT, 1, 1, 200, 100, 0, 0 );
-  //
-  // for( int i = 0; i < circles.size(); i++ )
-  // {
-  //    Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
-  //    int radius = cvRound(circles[i][2]);
-  //    // circle center
-  //    circle( circleFrame, center, 3, Scalar(0,255,0), -1, 8, 0 );
-  //    // circle outline
-  //    circle( circleFrame, center, radius, Scalar(0,0,255), 3, 8, 0 );
-  //  }
-
-  //imwrite("output/circleTest.jpg", circleFrame);
-
-  //////////////////////////////////////////////////////
-  */
 
   // 6. Loop through cropped boxes to detect lines and decide if dartboard or not
   analyseBoxes( houghFrame );
