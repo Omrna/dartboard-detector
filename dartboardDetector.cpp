@@ -60,6 +60,7 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
 
 void analyseBoxes( Mat &frame );
 std::vector<Rect> mergeDetections();
+Mat grabCut( Mat frame, int view );
 
 
 /** Global variables */
@@ -414,8 +415,6 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
       double circleCentreX = circle[0] + box.x;
       double circleCentreY = circle[1] + box.y;
 
-      std::cout << circleCentreX << '\n';
-
       bool xInBox = circleCentreX >= reducedBox.x && circleCentreX <= boxWidthBound;
       bool yInBox = circleCentreY >= reducedBox.y && circleCentreY <= boxHeightBound;
 
@@ -432,12 +431,11 @@ void detectionDecision( Mat &frame, Mat &croppedImg, Rect box, vector<lineData> 
     detectedDartboardsFinal.push_back(box);
   }
   else {
-    if (circleCounter > 0)
+    if (circleCounter > 0 && lines.size() > 0)
       detectedDartboardsFinal.push_back(box);
   }
 
-  rectangle(frame, Point(reducedBox.x, reducedBox.y), Point(reducedBox.x + reducedBox.width, reducedBox.y + reducedBox.height), Scalar( 0, 255, 0 ), 2);
-
+  rectangle(frame, Point(reducedBox.x, reducedBox.y), Point(reducedBox.x + reducedBox.width, reducedBox.y + reducedBox.height), Scalar( 0, 102, 0 ), 2);
 }
 
 void dartboardDetector( Mat &frame, Mat &drawingFrame, Mat &croppedImg, Rect box ) {
@@ -666,14 +664,6 @@ void displayHough( Mat frame ){
 
 void analyseBoxes( Mat &frame ){
 
-  // Find all circles in each cropped image
-  // for (int i = 0; i < detectedDartboardsVJ.size(); i ++){
-  //   Mat frameForCrop = frame.clone();
-  //   Mat croppedImg = frameForCrop(detectedDartboardsVJ[i]);
-  //   cvtColor( croppedImg, croppedImg, CV_BGR2GRAY );
-  //   extractCircles(croppedImg);
-  // }
-
   // Frame passed around to draw found lines, boxes and circles on
   Mat drawingFrame = frame.clone();
 
@@ -689,30 +679,31 @@ std::vector<Rect> mergeDetections() {
   std::vector<Rect> newDartboardDetections;
   std::vector<int> checked;
 
-  for (int i = 0; i < detectedDartboardsVJ.size(); i++) {
-		for (int j = 1; j < detectedDartboardsVJ.size(); j++) {
-      if(std::find(checked.begin(), checked.end(), j) != checked.end()) continue;
+  for (int i = 0; i < detectedDartboardsFinal.size(); i++) {
+		for (int j = 1; j < detectedDartboardsFinal.size(); j++) {
+
+      //if(std::find(checked.begin(), checked.end(), j) != checked.end()) continue;
       if(std::find(checked.begin(), checked.end(), i) != checked.end()) break;
 
-      if (i == detectedDartboardsVJ.size() - 1)
-        newDartboardDetections.push_back(detectedDartboardsVJ[i]);
+      if (i == detectedDartboardsFinal.size() - 1)
+        newDartboardDetections.push_back(detectedDartboardsFinal[i]);
 
       if (j <= i) continue;
 
-      Rect box1 = detectedDartboardsVJ[i];
-      Rect box2 = detectedDartboardsVJ[j];
+      Rect box1 = detectedDartboardsFinal[i];
+      Rect box2 = detectedDartboardsFinal[j];
 
 			// Get intersection and check matching area percentage
-			Rect intersection = detectedDartboardsVJ[i] & detectedDartboardsVJ[j];
+			Rect intersection = detectedDartboardsFinal[i] & detectedDartboardsFinal[j];
 			float intersectionArea = intersection.area();
 
 			// If there is an intersection, check percentage of intersection area
 			if (intersectionArea > 0) {
-				float matchPercentage = (intersectionArea / detectedDartboardsVJ[i].area()) * 100;
+				float matchPercentage = (intersectionArea / detectedDartboardsFinal[i].area()) * 100;
 
-        std::cout << matchPercentage << '\n';
+        //std::cout << matchPercentage << '\n';
 
-        int newX = cvRound((box1.y + box2.y) / 2);
+        int newX = cvRound((box1.x + box2.x) / 2);
         int newY = cvRound((box1.y + box2.y) / 2);
         int newWidth = cvRound((box1.width + box2.width) / 2);
         int newHeight = cvRound((box1.height + box2.height) / 2);
@@ -727,7 +718,7 @@ std::vector<Rect> mergeDetections() {
           checked.push_back(j);
           break;
 				}
-        if (j == (detectedDartboardsVJ.size() - 1)){
+        if (j == (detectedDartboardsFinal.size() - 1)){
           newDartboardDetections.push_back(box1);
           checked.push_back(i);
         }
@@ -735,16 +726,66 @@ std::vector<Rect> mergeDetections() {
 			// If loop reaches end without reaching intersection threshold, it is
 			// a false negative
 			else {
-				if (j == (detectedDartboardsVJ.size() - 1)){
+        // std::cout << "i: " << i << " and j: " << j << '\n';
+				if (j == (detectedDartboardsFinal.size() - 1)){
           newDartboardDetections.push_back(box1);
           checked.push_back(i);
         }
 			}
 		}
   }
-
-  std::cout << newDartboardDetections.size() << '\n';
   return newDartboardDetections;
+}
+
+Mat grabCut( Mat frame, int view ) {
+  Rect box = detectedDartboardsFinal[view];
+
+  Mat result;
+  Mat bgModel, fgModel;
+
+  // Use grabCut algorithm to segment background from foreground
+  grabCut(frame, result, box, bgModel, fgModel, 10, GC_INIT_WITH_RECT );
+
+  // Find foreground pixels
+  compare(result, cv::GC_PR_FGD, result, cv::CMP_EQ);
+
+  // Generate output image
+  cv::Mat foreground(frame.size(), CV_8UC3, Scalar(0,0,0));
+  frame.copyTo(foreground, result);
+
+  imwrite("output/foreground.jpg", foreground);
+
+  return foreground;
+}
+
+void outputWindow( Mat frame ) {
+
+  Mat detectedFeatures = imread("output/foundLines.jpg", CV_LOAD_IMAGE_COLOR);
+  Mat finalOutput = imread("output/detected.jpg", CV_LOAD_IMAGE_COLOR);
+
+  std::vector<Mat> segmentedImages;
+
+  for (int i = 0; i < detectedDartboardsFinal.size(); i++) {
+    Mat grabCutImage = grabCut(frame, i);
+    segmentedImages.push_back(grabCutImage);
+  }
+
+  namedWindow("Viola Jones and Hough Features Detected", CV_WINDOW_AUTOSIZE);
+  imshow("Viola Jones and Hough Features Detected", detectedFeatures);
+
+  waitKey(0);
+
+  namedWindow("Final Detections", CV_WINDOW_AUTOSIZE);
+  imshow("Final Detections", finalOutput);
+
+  waitKey(0);
+
+  namedWindow("Segmented Dartboards", CV_WINDOW_AUTOSIZE);
+
+  for (int i = 0; i < segmentedImages.size(); i++) {
+    imshow("Segmented Dartboards", segmentedImages[i]);
+    waitKey(0);
+  }
 }
 
 int main( int argc, const char** argv ){
@@ -755,9 +796,8 @@ int main( int argc, const char** argv ){
 	Mat frame = imread(argv[1], CV_LOAD_IMAGE_COLOR);
   Mat VJFrame = frame.clone();
   Mat houghFrame = frame.clone();
-  Mat circleFrame = frame.clone();
-  Mat grayCircleFrame;
   Mat finalOutput = frame.clone();
+  Mat grabCutFrame = frame.clone();
 
 	// 2. Load the Strong Classifier in a structure called `Cascade'
 	if( !cascade.load( cascade_name ) ){ printf("--(!)Error loading\n"); return -1; };
@@ -775,22 +815,22 @@ int main( int argc, const char** argv ){
   analyseBoxes( houghFrame );
 
   // 7. Merge overlapping true positives into one
-  // if (detectedDartboardsVJ.size() > 1)
-  //   detectedDartboardsVJ = mergeDetections();
+  if (detectedDartboardsFinal.size() > 1)
+    detectedDartboardsFinal = mergeDetections();
 
-  // 7. Show and save Viola Jones boundaries on line detections
+  // 8. Show and save final dartboard detections
   if (detectedDartboardsFinal.size() > 0)
     displayHough( finalOutput );
 
+  // 9. Save Result Image
   imwrite("output/detected.jpg", finalOutput);
 
-	// ADDED: 8. Perform F1 test
+  // 10. Create window with trackbar showing GrabCut foregrounds
+  outputWindow(grabCutFrame);
+
+	// 11. Perform F1 test
 	float f1ScoreVJ = F1Test(detectedDartboardsVJ.size(), imgName, frame, 0);
-
   float f1ScoreFinal = F1Test(detectedDartboardsFinal.size(), imgName, frame, 1);
-
-	// 6. Save Result Image
-	// imwrite( "output/detected.jpg", frame );
 
 	return 0;
 }
