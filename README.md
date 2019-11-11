@@ -1,4 +1,12 @@
-# Instructions #
+# dartboard-detector - Image Processing and Computer Vision
+
+This assignment you experiments with the Viola-Jones object detection framework provided by OpenCV, before combining it with Hough Transform techniques in order to get better results in detecting dartboards in images. 
+
+The Viola Jones detector produces bounding boxes for where it thinks there are dartboards. However these detections tend to be overfitted, producing many false positives. The Hough Transform is used to detect lines and circles within these bounding boxes to make a decision on whether or not it contains a dartboard.
+
+These detections are used along with the Hough Transform detecting lines and circles,
+
+## Instructions ##
 
 Compile using:
 
